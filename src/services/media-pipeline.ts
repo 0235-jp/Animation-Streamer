@@ -18,6 +18,9 @@ export interface ComposeOptions {
 
 const escapeSingleQuotes = (value: string) => value.replace(/'/g, "'\\''")
 const toSeconds = (ms: number) => (Math.max(ms, 0) / 1000).toFixed(3)
+const AUDIO_SAMPLE_RATE = 48_000
+const AUDIO_CHANNEL_LAYOUT = 'stereo'
+const AUDIO_CHANNEL_COUNT = 2
 
 export class MediaPipeline {
   private readonly tempDir: string
@@ -71,10 +74,17 @@ export class MediaPipeline {
     if (options.audioPath) {
       args.push('-i', options.audioPath)
     } else {
-      args.push('-f', 'lavfi', '-t', targetSeconds.toString(), '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000')
+      args.push(
+        '-f',
+        'lavfi',
+        '-t',
+        targetSeconds.toString(),
+        '-i',
+        `anullsrc=channel_layout=${AUDIO_CHANNEL_LAYOUT}:sample_rate=${AUDIO_SAMPLE_RATE}`
+      )
     }
 
-    args.push('-c:v', 'copy', '-c:a', 'aac', '-ar', '48000', '-shortest')
+    args.push('-c:v', 'copy', '-c:a', 'aac', '-ar', AUDIO_SAMPLE_RATE.toString(), '-shortest')
     if (!options.audioPath) {
       args.push('-t', targetSeconds.toString())
     }
@@ -118,7 +128,7 @@ export class MediaPipeline {
       '-c:a',
       'aac',
       '-ar',
-      '48000',
+      AUDIO_SAMPLE_RATE.toString(),
       '-movflags',
       '+faststart',
       outputPath
@@ -158,7 +168,7 @@ export class MediaPipeline {
       '-c:a',
       'pcm_s16le',
       '-ar',
-      '48000',
+      AUDIO_SAMPLE_RATE.toString(),
       outputPath
     )
 
@@ -178,7 +188,7 @@ export class MediaPipeline {
       '-f',
       'lavfi',
       '-i',
-      'anullsrc=r=48000:cl=stereo',
+      `anullsrc=r=${AUDIO_SAMPLE_RATE}:cl=${AUDIO_CHANNEL_LAYOUT}`,
       '-t',
       toSeconds(durationMs),
       '-c:a',
@@ -200,9 +210,9 @@ export class MediaPipeline {
       videoPath,
       '-vn',
       '-ac',
-      '2',
+      AUDIO_CHANNEL_COUNT.toString(),
       '-ar',
-      '48000',
+      AUDIO_SAMPLE_RATE.toString(),
       '-c:a',
       'pcm_s16le',
       filePath,
@@ -221,9 +231,9 @@ export class MediaPipeline {
       '-i',
       inputPath,
       '-ac',
-      '2',
+      AUDIO_CHANNEL_COUNT.toString(),
       '-ar',
-      '48000',
+      AUDIO_SAMPLE_RATE.toString(),
       '-c:a',
       'pcm_s16le',
       outputPath,
@@ -246,9 +256,9 @@ export class MediaPipeline {
       '-t',
       toSeconds(durationMs),
       '-ac',
-      '2',
+      AUDIO_CHANNEL_COUNT.toString(),
       '-ar',
-      '48000',
+      AUDIO_SAMPLE_RATE.toString(),
       '-c:a',
       'pcm_s16le',
       outputPath,
