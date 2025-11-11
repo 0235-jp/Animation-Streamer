@@ -36,9 +36,6 @@ export const configSchema = z.object({
       port: z.number().int().positive().default(4000),
     })
     .default({ port: 4000 }),
-  rtmp: z.object({
-    outputUrl: z.string().min(1),
-  }),
   actions: z.array(actionSchema).default([]),
   idleMotions: sizedMotionSchema,
   speechMotions: sizedMotionSchema,

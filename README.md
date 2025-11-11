@@ -37,7 +37,7 @@ curl -X POST http://localhost:4000/api/generate \
 `stream=false` の場合は `combined.outputPath` に 1 本にまとめたMP4パスが返却されます。 `stream=true` を指定すると各アクション完了ごとに NDJSON でレスポンスがストリーミングされます。
 
 ## 設定
-- `config/stream-profile.json` でモーション動画、VOICEVOXエンドポイント、RTMP出力などを定義します。主な拡張ポイントは以下の通り。
+- `config/stream-profile.json` でモーション動画やVOICEVOXエンドポイントなどを定義します。主な拡張ポイントは以下の通り。
   - `speechTransitions.enter` / `exit` を設定すると、`speak` アクションの先頭/末尾に idle→talk / talk→idle のブリッジ動画が自動挿入され、音声にも同じ長さのサイレントパディングが付与されます。
   - `actions` に任意IDと動画パスを追加すれば、`action` フィールドでそのIDを指定してプレセット動画を再生できます（`speak` / `idle` は予約語のため登録不可）。
   - `speechMotions.large` / `.small` で発話モーションを感情別に管理できます。Large/Smallタイプは `animation-streamer-example` のタイムラインロジックを踏襲しています。
