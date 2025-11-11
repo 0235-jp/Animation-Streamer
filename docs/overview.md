@@ -10,7 +10,7 @@
 - RTMP/HTTP-FLV配信を提供しOBSのメディアソースとして利用可能にする。
 - 待機モーションを複数登録し、各クリップ再生終了ごとにランダム切り替えでループ再生する仕組み。
 - `text` エンドポイントのインタフェースを先行定義（内部処理はTODO）。
-- ストリームとは独立した `generate` エンドポイントを定義し、`speak`/`wait`/任意アクションを並べたJSONを受け取って順次クリップを生成する。`stream`フラグが `true` の場合はアクション完了ごとに結果をストリーミング返却、`false` の場合は一括返却。
+- ストリームとは独立した `generate` エンドポイントを定義し、`speak`/`idle`/任意アクションを並べたJSONを受け取って順次クリップを生成する。`stream`フラグが `true` の場合はアクション完了ごとに結果をストリーミング返却、`false` の場合は一括返却。
 
 ## 技術選定
 - **ランタイム**: Node.js (TypeScript)。
@@ -28,7 +28,7 @@ Client (OBS, API caller)
         |
    StreamService (State machine & orchestration)
    |          \                    \
-WaitingLoop   SpeechTaskQueue (TODO) GenerationService (mp4出力)
+IdleLoop      SpeechTaskQueue (TODO) GenerationService (mp4出力)
 Controller     \                    /
                MediaPipeline (ffmpeg, TTS, assets)
         |
@@ -39,19 +39,19 @@ Controller     \                    /
 
 ## 主なコンポーネント
 - **Express API 層**: 認証(ローカルAPIキー想定)、入力バリデーション、`StreamService` 呼び出し。
-- **StreamService / StreamSession**: 状態遷移 (IDLE, WAITING, SPEECH, STOPPED) とプロセスハンドルを保持。待機ループの開始・停止、タスクキューへの操作口を提供。
-- **WaitingLoopController**: 複数の待機モーションを管理。1つのffmpegプロセスに`concat`デマルチプレクサでプレイリストを流し込み、各動画の終了直前に次モーションをランダム選択して書き込むことでフレーム落ちなく切り替える。発話モーションも同じプレイリストに割り込み挿入し、待機→発話→待機の継ぎ目でフレームギャップを生まない。
+- **StreamService / StreamSession**: 状態遷移 (IDLE, IDLING, SPEECH, STOPPED) とプロセスハンドルを保持。待機ループの開始・停止、タスクキューへの操作口を提供。
+- **IdleLoopController**: 複数の待機モーションを管理。1つのffmpegプロセスに`concat`デマルチプレクサでプレイリストを流し込み、各動画の終了直前に次モーションをランダム選択して書き込むことでフレーム落ちなく切り替える。発話モーションも同じプレイリストに割り込み挿入し、待機→発話→待機の継ぎ目でフレームギャップを生まない。
 - **SpeechTaskQueue (将来実装)**: `text` APIから受けたタスクを受信順でFIFO管理。生成完了が前後しても再生順は保証する。
-- **GenerationService**: `POST /api/generate` のアクション列をバリデーションし、`stream` フラグに応じて逐次 or 一括レスポンスを返す。`speak`/`wait`/任意アクションごとにVOICEVOX→モーション合成を実行する。
+- **GenerationService**: `POST /api/generate` のアクション列をバリデーションし、`stream` フラグに応じて逐次 or 一括レスポンスを返す。`speak`/`idle`/任意アクションごとにVOICEVOX→モーション合成を実行する。
 - **ClipPlanner**: `animation-streamer-example` に実装されている Large/Small clip allocation ロジックをサーバー側に移植。emotionやモーションタイプに応じて必要時間をカバーするクリップリストを決定する。
-- `speechTransitions` が設定されている場合は、`speak` アクションの先頭/末尾に wait→talk / talk→wait のトランジション動画を自動で挿入し、音声にも同じ長さのサイレントパディングを追加してシームレスに接続する。トランジションにも `emotion` を指定でき、対象の発話感情と一致した場合のみ挿入される。
-- **MediaPipeline**: ffmpegプロセスの生成/監視と、VOICEVOXなどのTTSとの橋渡し。音声と動画の合成、一時ファイルの管理を担当。`speak`ではTTS→WAV→mp4多重化、`wait`や任意アクションでは動画＋無音音声を多重化する。
+- `speechTransitions` が設定されている場合は、`speak` アクションの先頭/末尾に idle→talk / talk→idle のトランジション動画を自動で挿入し、音声にも同じ長さのサイレントパディングを追加してシームレスに接続する。トランジションにも `emotion` を指定でき、対象の発話感情と一致した場合のみ挿入される。
+- **MediaPipeline**: ffmpegプロセスの生成/監視と、VOICEVOXなどのTTSとの橋渡し。音声と動画の合成、一時ファイルの管理を担当。`speak`ではTTS→WAV→mp4多重化、`idle`や任意アクションでは動画＋無音音声を多重化する。
 - **ConfigLoader**: JSONを読み込み、型チェック済みの設定オブジェクトをDIコンテナへ供給。
 
 ## リクエストフロー（start/stop）
 1. **POST /api/start**
    - 状態がIDLE/STOPPEDなら待機ループを開始。
-   - `WaitingLoopController` がffmpeg(`concat`入力)を起動し、最初の待機モーションをプレイリストに流し込む。
+   - `IdleLoopController` がffmpeg(`concat`入力)を起動し、最初の待機モーションをプレイリストに流し込む。
    - レスポンスは現在の状態と使用中のモーションIDを返却。
 2. **POST /api/stop**
    - 進行中の待機ループと（将来的に）音声タスクを停止し、ffmpeg子プロセスを終了。
@@ -61,7 +61,7 @@ Controller     \                    /
 1. クライアントは `stream`, `defaults`, `requests[]` を含むJSONをPOST（例: Section「Generateアクションリクエスト」参照）。
 2. `GenerationService` がアクションを先頭から順次処理。
    - `speak`: VOICEVOXで音声合成 → ClipPlannerが emotion + Large/Small で発話モーションを決定 → `MediaPipeline` が concat + AAC でmp4を出力。
-   - `wait`: `durationMs` を満たすまで待機モーションをLarge優先で並べ、無音AACと多重化。
+   - `idle`: `durationMs` を満たすまで待機モーションをLarge優先で並べ、無音AACと多重化。
    - 任意アクション: `config.actions` の動画を単発で出力。
 3. `stream = true` の場合は処理完了したアクションから順にNDJSONで返却。`false` の場合は全アクション完了後に配列で返却。
 4. `stream = false` の場合は全アクションを1本のタイムラインへ並べてffmpegで一括レンダリングし、最終MP4のみ `combined` として返す（個別クリップは返却しない）。
@@ -69,10 +69,10 @@ Controller     \                    /
 
 ## 状態遷移
 ```
-IDLE --start--> WAITING --text--> SPEECH --(speech done)--> WAITING
-WAITING --stop--> STOPPED
+IDLE --start--> IDLING --text--> SPEECH --(speech done)--> IDLING
+IDLING --stop--> STOPPED
 SPEECH --stop--> STOPPED
-STOPPED --start--> WAITING
+STOPPED --start--> IDLING
 ```
 
 ## Generateアクションリクエスト
@@ -81,19 +81,19 @@ STOPPED --start--> WAITING
   "stream": true,
   "defaults": {
     "emotion": "neutral",
-    "waitMotionId": "idle-default-large"
+    "idleMotionId": "idle-default-large"
   },
   "requests": [
     { "action": "speak", "params": { "text": "こんにちは", "emotion": "happy" } },
-    { "action": "wait", "params": { "durationMs": 1000 } },
+    { "action": "idle", "params": { "durationMs": 1000 } },
     { "action": "start" }
   ]
 }
 ```
 - `requests` は記述順に処理され、レスポンスの `id` はサーバーが `1, 2, ...` と自動採番する。
 - `speak` は `text` 必須／`emotion` 任意。emotionに合うモーションが無い場合は `neutral` プールを自動選択。
-- `wait` は `durationMs` 必須。`motionId` を指定するとそのモーションだけでタイムラインを組む。
-- 任意 `action` の値は `config.actions[].id` のいずれかに一致している必要がある（`speak`/`wait` を登録することはできない）。
+- `idle` は `durationMs` 必須。`motionId` を指定するとそのモーションだけでタイムラインを組む。
+- 任意 `action` の値は `config.actions[].id` のいずれかに一致している必要がある（`speak`/`idle` を登録することはできない）。
 
 ## 将来拡張の指針
 - `text` エンドポイント：TTS連携、音声と発話モーションの合成、待機への復帰を順次処理する。

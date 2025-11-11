@@ -16,7 +16,7 @@ animation-streamer/
 │  │        └─ generation.controller.ts
 │  ├─ services/
 │  │   ├─ stream.service.ts  # 状態管理・オーケストレーション
-│  │   ├─ waiting-loop.controller.ts
+│  │   ├─ idle-loop.controller.ts
 │  │   ├─ speech-queue.ts    # TODO: text処理用 FIFO
 │  │   ├─ generation.service.ts # generate API用
 │  │   ├─ media-pipeline.ts  # ffmpeg/TTS連携
@@ -49,25 +49,23 @@ animation-streamer/
   ],
   "idleMotions": {
     "large": [
-      { "id": "idle-default-large", "emotion": "neutral", "path": "../example/motion/wait.mp4" }
+      { "id": "idle-default-large", "emotion": "neutral", "path": "../example/motion/idle.mp4" }
     ],
     "small": [
-      { "id": "idle-default-small", "emotion": "neutral", "path": "../example/motion/talk_wait.mp4" }
+      { "id": "idle-default-small", "emotion": "neutral", "path": "../example/motion/talk_idle.mp4" }
     ]
   },
   "speechMotions": {
     "large": [
       { "id": "talk-default-large", "emotion": "neutral", "path": "../example/motion/talk_large.mp4" },
-      { "id": "talk-happy-large", "emotion": "happy", "path": "../example/motion/talk_large.mp4" }
     ],
     "small": [
       { "id": "talk-default-small", "emotion": "neutral", "path": "../example/motion/talk_small.mp4" },
-      { "id": "talk-happy-small", "emotion": "happy", "path": "../example/motion/talk_small.mp4" }
     ]
   },
   "speechTransitions": {
-    "enter": { "id": "wait-talk", "emotion": "neutral", "path": "../example/motion/wait_talk.mp4" },
-    "exit": { "id": "talk-wait", "emotion": "neutral", "path": "../example/motion/talk_wait.mp4" }
+    "enter": { "id": "enter-neutral", "emotion": "neutral", "path": "../example/motion/enter.mp4" },
+    "exit": { "id": "exit-neutral", "emotion": "neutral", "path": "../example/motion/exit.mp4" }
   },
   "audioProfile": {
     "ttsEngine": "voicevox",
@@ -77,9 +75,9 @@ animation-streamer/
   "assets": { "tempDir": "./tmp" }
 }
 ```
-- `actions` は `action` に任意IDを指定するための単発モーション定義。`speak` / `wait` は予約語のため登録不可。
+- `actions` は `action` に任意IDを指定するための単発モーション定義。`speak` / `idle` は予約語のため登録不可。
 - `idleMotions` は待機モーションのプール。`speechMotions` は `large` / `small` ごとに配列を分け、感情ごとにモーションセットを切り替えられる。
-- `speechTransitions` を設定すると、`speak` アクションの先頭に `enter`（例: wait→talk）、末尾に `exit`（例: talk→wait）を自動挿入する。遷移にも `emotion` を設定でき、対象の発話感情と一致した場合のみ挿入される。
+- `speechTransitions` を設定すると、`speak` アクションの先頭に `enter`（例: idle→talk）、末尾に `exit`（例: talk→idle）を自動挿入する。遷移にも `emotion` を設定でき、対象の発話感情と一致した場合のみ挿入される。
 - `path` はffmpegが読めるローカルパス。
 - `audioProfile` は唯一のTTS設定として VOICEVOX のURLやspeakerIdを含む。
 
@@ -87,7 +85,7 @@ animation-streamer/
 - `interface StreamState { sessionId: string; phase: 'IDLE'|'WAITING'|'SPEECH'|'STOPPED'; activeMotionId?: string; queueLength: number; }
 - `StreamSession` クラスが以下を保持:
   - `phase`
-  - `waitingProcess: ChildProcess | null`
+  - `idleLoopProcess: ChildProcess | null`
   - `speechProcess: ChildProcess | null`
   - `queue: SpeechTaskQueue`
   - `currentMotionId`
@@ -95,11 +93,11 @@ animation-streamer/
 - `status` API 用に読み取り専用スナップショットを提供。
 - `GenerationService` はストリーム状態とは独立したジョブ（`generate` API呼び出し）を扱うため、`StreamSession` のロックとは切り離し、同時実行数やジョブキューを個別に制御する。
 
-## 4. WaitingLoopController（待機・発話共通プレイリスト）
+## 4. IdleLoopController（待機・発話共通プレイリスト）
 - 入力: `idleMotions: Motion[]`, `outputUrl`, `ProcessManager`。
 - 実装戦略: ffmpegの`concat`デマルチプレクサを使い、待機モーションと発話モーションのプレイリストを標準入力から逐次供給する。ffmpegプロセスは常駐し、ループ・割込みとも同一ストリーム内で処理してフレームギャップを生まない。
   1. `start()` で `ffmpeg -re -f concat -safe 0 -i pipe:0 -c copy -f flv <output>` を起動し、`stdin`へ最初の待機モーションエントリ（`file '<path>'`）を書き込む。
-  2. ffmpegは現在のモーション再生中に次エントリが届くとシームレスに続きの動画として扱う。`WaitingLoopController`は動画終了見込み時間の少し前に次の待機モーションをランダム選択して`stdin`へ追記し、常に数件のバッファを確保する。
+  2. ffmpegは現在のモーション再生中に次エントリが届くとシームレスに続きの動画として扱う。`IdleLoopController`は動画終了見込み時間の少し前に次の待機モーションをランダム選択して`stdin`へ追記し、常に数件のバッファを確保する。
   3. `SpeechTaskQueue` から「次は発話モーションを再生したい」というリクエストを受けると、待機モーションの追記を一時的に停止し、次エントリとして発話モーションを挿入する。そのモーションが再生されている間にも、終了後に続く待機モーションを先行予約する。
   4. `stop()` はChildProcessへSIGTERM→timeout→SIGKILL。停止時は`stdin`を閉じて `concat` を自然終了させる。
 - 待機モーションの末尾フレームと発話モーションの先頭フレームをデザイナー側で揃えておけば、プレイリスト挿入のみで「待機→発話→待機」が一切止まらず繋がる。
@@ -108,7 +106,7 @@ animation-streamer/
 - 役割: `text` エンドポイントから`SpeechTask`を受信順で管理。
 - 2段階処理:
   - **prepare phase**: TTS実行や音声ファイル生成（並列OK、音声プロファイルに設定されたVOICEVOX URLを利用）。
-  - **playback phase**: 再生は FIFO 順に1件ずつ。`WaitingLoopController.reserveNextClip(taskClipPath)` を呼び、待機モーションの次エントリとして発話モーションを差し込み、再生後に待機モーション追記を再開する。
+  - **playback phase**: 再生は FIFO 順に1件ずつ。`IdleLoopController.reserveNextClip(taskClipPath)` を呼び、待機モーションの次エントリとして発話モーションを差し込み、再生後に待機モーション追記を再開する。
 - 待機ループが`concat`入力を受け取っているため、`reserveNextClip` で待機プレイリストへの書き込みを調整し、現在再生中の待機モーション終了直後に発話モーションが始まるようスケジューリングする。発話モーション終了前に次の待機モーションを先行で書き込むことでフレーム欠落を避ける。
 - 実装案: Node の `EventEmitter` と Promise チェーンで自前キュー、または `p-queue` 等の軽量ライブラリ。
 - 現段階では`enqueue`にTODOを入れ、APIからの呼び出しを受けるだけ。
@@ -122,7 +120,7 @@ animation-streamer/
   "stream": true,
   "defaults": {
     "emotion": "neutral",
-    "waitMotionId": "idle-default-large"
+    "idleMotionId": "idle-default-large"
   },
   "requests": [
     {
@@ -134,7 +132,7 @@ animation-streamer/
       }
     },
     {
-      "action": "wait",
+      "action": "idle",
       "params": {
         "durationMs": 1000,
         "motionId": "idle-default-large"
@@ -152,15 +150,15 @@ animation-streamer/
 - `stream`: `true` の場合は逐次レスポンス（chunked JSON / SSE）で生成完了ごとに結果をpush。`false`または未指定時は全アクション完了後にまとめて返す。
 - `defaults`: バッチ内の共通既定値。`requests[].params` に同名キーがあればそちらを優先。
 - `requests` は記述順に処理され、レスポンスの `id` はサーバー側で `1, 2, ...` と自動採番される（クライアント指定は不要）。
-- `requests[].action`: `speak` / `wait` / 設定ファイルで定義した `actions[].id` のいずれか。`speak` と `wait` は予約語のため `actions` には登録不可。
+- `requests[].action`: `speak` / `idle` / 設定ファイルで定義した `actions[].id` のいずれか。`speak` と `idle` は予約語のため `actions` には登録不可。
 - `requests[].params`: アクション固有の入力。将来タグ経由で話速・ポーズを制御できるよう `tags: string[]` を受け付けておく。
 
 ### 6.2 アクション種別
 - **speak**
   - 必須: `text`。`emotion` は任意（未指定時は `defaults.emotion` → `neutral`）。emotion指定があっても該当モーションが無い場合は `neutral` プールへフォールバックする。
-  - VOICEVOX で音声合成し、出来上がったWAVの長さ分だけ発話モーションを割り当てる。さらに `speechTransitions.enter/exit` が定義されている場合は、音声の前後にサイレントパディングを入れて `wait→talk` / `talk→wait` のブリッジ動画を自動挿入する。
+  - VOICEVOX で音声合成し、出来上がったWAVの長さ分だけ発話モーションを割り当てる。さらに `speechTransitions.enter/exit` が定義されている場合は、音声の前後にサイレントパディングを入れて `idle→talk` / `talk→idle` のブリッジ動画を自動挿入する。
   - `speechMotions` を emotion + type(Large/Small)でグループ化し、`animation-streamer-example` の `buildTimelinePlan` と同様に Largeで埋めて余りをSmallで補完。emotionに一致するモーションが無ければ `neutral` → その他任意順でフォールバック。
-- **wait**
+- **idle**
   - 必須: `durationMs`。任意: `motionId`（明示指定時はそのモーションだけで構成）、`emotion`（待機モーションの感情タグでフィルタ）。
   - 音声は生成せず、`idleMotions` をLarge優先/Small補完で `durationMs` をカバーする。必要に応じて `anullsrc` で無音AACを生成し動画長に合わせる。
 - **任意アクション（config.actions）**
@@ -171,9 +169,9 @@ animation-streamer/
 2. `requests` を順次処理。各アクションは `GenerationJobContext` に共有リソース（設定・tempDir・VOICEVOXクライアント）を持つ。
 3. `speak`:
    1. `MediaPipeline.synthesizeVoice(text)` でWAV生成し、48kHzステレオへ正規化。
-   2. `ClipPlanner.selectSpeechClips(emotion, duration)` がモーションリストを返す。`speechTransitions.enter/exit` が設定されていれば、リストの先頭にwait→talk、末尾にtalk→waitのトランジションを差し込み、音声側は前後にサイレントパディングを入れて同期させる。
+   2. `ClipPlanner.selectSpeechClips(emotion, duration)` がモーションリストを返す。`speechTransitions.enter/exit` が設定されていれば、リストの先頭にidle→talk、末尾にtalk→idleのトランジションを差し込み、音声側は前後にサイレントパディングを入れて同期させる。
    3. `MediaPipeline.compose(clips, audioPath, duration)` が concat用リストを作り、ffmpegで MP4 を出力。
-4. `wait`: `ClipPlanner.selectIdleClips(duration, emotion)` → `MediaPipeline.compose(clips, null, duration)`。
+4. `idle`: `ClipPlanner.selectIdleClips(duration, emotion)` → `MediaPipeline.compose(clips, null, duration)`。
 5. 任意アクション: `actions` から動画パスを取得し単体で `compose`。
 6. `stream === true` の場合はアクション単位で即座にffmpegを走らせ、生成順にNDJSONで返却する。
 7. `stream === false` の場合は、すべてのアクション音声とモーションを一つのタイムラインに並べ、1回のffmpeg実行で最終MP4 (`combined`) を生成する。
@@ -196,14 +194,14 @@ animation-streamer/
 
 ## 7. MediaPipeline / ClipPlanner
 - **ClipPlanner**
-  - `selectSpeechClips(emotion, duration)` と `selectWaitingClips(duration)` を提供。`animation-streamer-example/src/lib/timeline.ts` の Large/Small選択ロジックをサーバーサイドへ移植し、durationをカバーするまでランダムにLargeを優先・余剰をSmallで補完する。
+  - `selectSpeechClips(emotion, duration)` と `selectIdleClips(duration)` を提供。`animation-streamer-example/src/lib/timeline.ts` の Large/Small選択ロジックをサーバーサイドへ移植し、durationをカバーするまでランダムにLargeを優先・余剰をSmallで補完する。
   - emotionごとのプールを事前に構築し、ヒットしない場合は `neutral` → `その他` の順でフォールバック。
 - **MediaPipeline**
   - `synthesizeVoice(text, emotion)`：VOICEVOXエンドポイントへ `audio_query` → `synthesis` を行い、結果のWAVをtempDir内に保存。戻り値は `{ audioPath, durationMs }`。
   - `compose(clips, audioPath | null, durationMs)`：`clips` から `concat` ファイルを生成し、必要数だけ `ffmpeg -stream_loop` or 事前コピーで並べる。音声が無い場合は `anullsrc` を入力に追加してAACトラックを生成。
   - `renderToFile` は常に H.264 + AAC で `assets.tempDir` へ出力し、`GenerationService` へ相対/絶対パスを返す。
   - 生成中の一時ファイルは `CleanupService` に登録しておき、成功/失敗に関わらず削除。
-- ストリーム配信用の `createWaitingProcess` / `createSpeechProcess` も将来ここにまとめるが、現段階では `generate` 用 `compose` が中心。
+- ストリーム配信用の `createIdleProcess` / `createSpeechProcess` も将来ここにまとめるが、現段階では `generate` 用 `compose` が中心。
 - ffmpeg呼び出しは `fluent-ffmpeg` か `child_process.spawn` のどちらでもよいが、`-f concat -safe 0 -i <list>` + `-i <audio>` + `-c:v libx264 -preset veryfast -c:a aac -shortest` を基本形とする。
 
 ## 8. API 仕様 (初期)
@@ -244,7 +242,7 @@ animation-streamer/
 ## 9. エラーハンドリング・クリーンアップ
 - ffmpegプロセスは `exit` コードを監視し、異常終了時はログ出力後に次モーションで再試行。
 - stop時:
-  - `waitingProcess`/`speechProcess` にSIGTERM。
+  - `idleLoopProcess`/`speechProcess` にSIGTERM。
   - 5秒以内に終了しなければSIGKILL。
   - `tmp` ディレクトリの一時ファイルを削除。
 - APIエラーコード:

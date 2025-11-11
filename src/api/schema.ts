@@ -5,7 +5,7 @@ export const generateRequestSchema = z.object({
   defaults: z
     .object({
       emotion: z.string().min(1).optional(),
-      waitMotionId: z.string().min(1).optional(),
+      idleMotionId: z.string().min(1).optional(),
     })
     .optional(),
   requests: z

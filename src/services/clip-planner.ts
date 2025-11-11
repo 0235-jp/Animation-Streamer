@@ -35,20 +35,20 @@ export class ClipPlanner {
       small: ResolvedSpeechMotion[]
     }
   >
-  private readonly waitingLarge: ResolvedIdleMotion[]
-  private readonly waitingSmall: ResolvedIdleMotion[]
+  private readonly idleLarge: ResolvedIdleMotion[]
+  private readonly idleSmall: ResolvedIdleMotion[]
   private readonly speechEnterTransition?: ResolvedTransitionMotion
   private readonly speechExitTransition?: ResolvedTransitionMotion
 
   constructor(
     private readonly mediaPipeline: MediaPipeline,
     speechPools: ResolvedSpeechPools,
-    waitingPools: ResolvedIdlePools,
+    idlePools: ResolvedIdlePools,
     speechTransitions?: ResolvedSpeechTransitions
   ) {
     this.speechPools = this.buildSpeechPools(speechPools)
-    this.waitingLarge = waitingPools.large
-    this.waitingSmall = waitingPools.small
+    this.idleLarge = idlePools.large
+    this.idleSmall = idlePools.small
     this.speechEnterTransition = speechTransitions?.enter
     this.speechExitTransition = speechTransitions?.exit
   }
@@ -100,23 +100,23 @@ export class ClipPlanner {
     return this.fillPlan(durationMs, pool.large, pool.small)
   }
 
-  async buildWaitPlan(durationMs: number, motionId?: string, emotion?: string): Promise<ClipPlanResult> {
+  async buildIdlePlan(durationMs: number, motionId?: string, emotion?: string): Promise<ClipPlanResult> {
     const normalizedEmotion = normalizeEmotion(emotion)
     if (motionId) {
-      const motion = [...this.waitingLarge, ...this.waitingSmall].find((m) => m.id === motionId)
+      const motion = [...this.idleLarge, ...this.idleSmall].find((m) => m.id === motionId)
       if (!motion) {
         throw new Error(`待機モーション ${motionId} が見つかりません`)
       }
       return this.repeatSingleMotion(motion, durationMs)
     }
     const filteredLarge = normalizedEmotion
-      ? this.waitingLarge.filter((motion) => motion.emotion === normalizedEmotion)
-      : this.waitingLarge
+      ? this.idleLarge.filter((motion) => motion.emotion === normalizedEmotion)
+      : this.idleLarge
     const filteredSmall = normalizedEmotion
-      ? this.waitingSmall.filter((motion) => motion.emotion === normalizedEmotion)
-      : this.waitingSmall
-    const fallbackEmotionLarge = filteredLarge.length ? filteredLarge : this.waitingLarge
-    const fallbackEmotionSmall = filteredSmall.length ? filteredSmall : this.waitingSmall
+      ? this.idleSmall.filter((motion) => motion.emotion === normalizedEmotion)
+      : this.idleSmall
+    const fallbackEmotionLarge = filteredLarge.length ? filteredLarge : this.idleLarge
+    const fallbackEmotionSmall = filteredSmall.length ? filteredSmall : this.idleSmall
     return this.fillPlan(durationMs, fallbackEmotionLarge, fallbackEmotionSmall)
   }
 

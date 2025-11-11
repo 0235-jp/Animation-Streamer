@@ -28,7 +28,7 @@ curl -X POST http://localhost:4000/api/generate \
     "stream": false,
     "requests": [
       { "action": "speak", "params": { "text": "こんにちは" } },
-      { "action": "wait", "params": { "durationMs": 2000 } },
+      { "action": "idle", "params": { "durationMs": 2000 } },
       { "action": "speak", "params": { "text": "さようなら" } }
     ]
   }'
@@ -38,8 +38,8 @@ curl -X POST http://localhost:4000/api/generate \
 
 ## 設定
 - `config/stream-profile.json` でモーション動画、VOICEVOXエンドポイント、RTMP出力などを定義します。主な拡張ポイントは以下の通り。
-  - `speechTransitions.enter` / `exit` を設定すると、`speak` アクションの先頭/末尾に wait→talk / talk→wait のブリッジ動画が自動挿入され、音声にも同じ長さのサイレントパディングが付与されます。
-  - `actions` に任意IDと動画パスを追加すれば、`action` フィールドでそのIDを指定してプレセット動画を再生できます（`speak` / `wait` は予約語のため登録不可）。
+  - `speechTransitions.enter` / `exit` を設定すると、`speak` アクションの先頭/末尾に idle→talk / talk→idle のブリッジ動画が自動挿入され、音声にも同じ長さのサイレントパディングが付与されます。
+  - `actions` に任意IDと動画パスを追加すれば、`action` フィールドでそのIDを指定してプレセット動画を再生できます（`speak` / `idle` は予約語のため登録不可）。
   - `speechMotions.large` / `.small` で発話モーションを感情別に管理できます。Large/Smallタイプは `animation-streamer-example` のタイムラインロジックを踏襲しています。
 
 ## Swagger サンプル
@@ -50,7 +50,7 @@ OpenAPI は `docs/openapi.yaml` に定義されています。Swagger UI から�
   "defaults": { "emotion": "neutral" },
   "requests": [
     { "action": "speak", "params": { "text": "こんにちは", "emotion": "happy" } },
-    { "action": "wait", "params": { "durationMs": 2000 } },
+    { "action": "idle", "params": { "durationMs": 2000 } },
     { "action": "start" }
   ]
 }

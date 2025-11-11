@@ -1,6 +1,6 @@
 export interface GenerateDefaults {
   emotion?: string
-  waitMotionId?: string
+  idleMotionId?: string
 }
 
 export interface GenerateRequestItem {

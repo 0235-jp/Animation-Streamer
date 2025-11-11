@@ -66,7 +66,7 @@ export class GenerationService {
   ): Promise<StreamBatchResult | CombinedBatchResult> {
     const defaults: GenerateDefaults = {
       emotion: payload.defaults?.emotion ?? 'neutral',
-      waitMotionId: payload.defaults?.waitMotionId,
+      idleMotionId: payload.defaults?.idleMotionId,
     }
     const indexedRequests: IndexedRequest[] = payload.requests.map((item, index) => ({
       item,
@@ -156,8 +156,8 @@ export class GenerationService {
     switch (actionName) {
       case 'speak':
         return this.handleSpeak(item, defaults, requestId)
-      case 'wait':
-        return this.handleWait(item, defaults, requestId)
+      case 'idle':
+        return this.handleIdle(item, defaults, requestId)
       default:
         return this.handleCustomAction(item, requestId)
     }
@@ -173,8 +173,8 @@ export class GenerationService {
     switch (actionName) {
       case 'speak':
         return this.planSpeakAction(item, defaults, jobDir, requestId)
-      case 'wait':
-        return this.planWaitAction(item, defaults, jobDir, requestId)
+      case 'idle':
+        return this.planIdleAction(item, defaults, jobDir, requestId)
       default:
         return this.planCustomAction(item, jobDir, requestId)
     }
@@ -242,17 +242,17 @@ export class GenerationService {
     }
   }
 
-  private async handleWait(
+  private async handleIdle(
     item: GenerateRequestItem,
     defaults: GenerateDefaults,
     requestId: string
   ): Promise<ActionResult> {
     const params = item.params ?? {}
     const durationMs = this.ensurePositiveNumber(params.durationMs, 'durationMs', requestId)
-    const motionId = this.ensureOptionalString(params.motionId) ?? defaults.waitMotionId
+    const motionId = this.ensureOptionalString(params.motionId) ?? defaults.idleMotionId
 
     const emotion = this.ensureOptionalString(params.emotion)
-    const plan = await this.clipPlanner.buildWaitPlan(durationMs, motionId, emotion)
+    const plan = await this.clipPlanner.buildIdlePlan(durationMs, motionId, emotion)
     const jobDir = await this.mediaPipeline.createJobDir()
     try {
       const { outputPath, durationMs: actualDuration } = await this.mediaPipeline.compose({
@@ -260,7 +260,7 @@ export class GenerationService {
         durationMs,
         jobDir,
       })
-      const finalPath = await this.moveToTemp(outputPath, `wait-${requestId}`)
+      const finalPath = await this.moveToTemp(outputPath, `idle-${requestId}`)
       return {
         id: requestId,
         action: item.action,
@@ -274,7 +274,7 @@ export class GenerationService {
   }
 
   private async handleCustomAction(item: GenerateRequestItem, requestId: string): Promise<ActionResult> {
-    if (item.action === 'speak' || item.action === 'wait') {
+    if (item.action === 'speak' || item.action === 'idle') {
       throw new ActionProcessingError('予約語はactionsに登録できません', requestId)
     }
     const action = this.actionsMap.get(item.action)
@@ -393,7 +393,7 @@ export class GenerationService {
     }
   }
 
-  private async planWaitAction(
+  private async planIdleAction(
     item: GenerateRequestItem,
     defaults: GenerateDefaults,
     jobDir: string,
@@ -401,9 +401,9 @@ export class GenerationService {
   ): Promise<PlannedAction> {
     const params = item.params ?? {}
     const durationMs = this.ensurePositiveNumber(params.durationMs, 'durationMs', requestId)
-    const motionId = this.ensureOptionalString(params.motionId) ?? defaults.waitMotionId
+    const motionId = this.ensureOptionalString(params.motionId) ?? defaults.idleMotionId
     const emotion = this.ensureOptionalString(params.emotion)
-    const plan = await this.clipPlanner.buildWaitPlan(durationMs, motionId, emotion)
+    const plan = await this.clipPlanner.buildIdlePlan(durationMs, motionId, emotion)
     const planDuration = plan.totalDurationMs
     const audioPath = await this.mediaPipeline.createSilentAudio(planDuration, jobDir)
     return {
@@ -421,7 +421,7 @@ export class GenerationService {
     jobDir: string,
     requestId: string
   ): Promise<PlannedAction> {
-    if (item.action === 'speak' || item.action === 'wait') {
+    if (item.action === 'speak' || item.action === 'idle') {
       throw new ActionProcessingError('予約語はactionsに登録できません', requestId)
     }
     const action = this.actionsMap.get(item.action)

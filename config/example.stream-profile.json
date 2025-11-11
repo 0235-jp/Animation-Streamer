@@ -5,7 +5,7 @@
   "actions": [
     {
       "id": "start",
-      "path": "../example/motion/wait_talk.mp4"
+      "path": "../example/motion/idle_talk.mp4"
     }
   ],
   "idleMotions": {
@@ -13,14 +13,14 @@
       {
         "id": "idle-default-large",
         "emotion": "neutral",
-        "path": "../example/motion/wait.mp4"
+        "path": "../example/motion/idle.mp4"
       }
     ],
     "small": [
       {
         "id": "idle-default-small",
         "emotion": "neutral",
-        "path": "../example/motion/talk_wait.mp4"
+        "path": "../example/motion/talk_idle.mp4"
       }
     ]
   },
@@ -42,14 +42,14 @@
   },
   "speechTransitions": {
     "enter": {
-      "id": "wait-talk",
+      "id": "idle-talk",
       "emotion": "neutral",
-      "path": "../example/motion/wait_talk.mp4"
+      "path": "../example/motion/idle_talk.mp4"
     },
     "exit": {
-      "id": "talk-wait",
+      "id": "talk-idle",
       "emotion": "neutral",
-      "path": "../example/motion/talk_wait.mp4"
+      "path": "../example/motion/talk_idle.mp4"
     }
   },
   "audioProfile": {
