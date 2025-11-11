@@ -2,7 +2,7 @@
   "name": "animation-streamer",
   "version": "0.0.1",
   "description": "",
-  "main": "index.js",
+  "main": "dist/server.js",
   "directories": {
     "doc": "docs",
     "example": "example"
