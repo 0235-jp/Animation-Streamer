@@ -1,0 +1,63 @@
+{
+  "server": {
+    "port": 4000
+  },
+  "actions": [
+    {
+      "id": "start",
+      "path": "../example/motion/wait_talk.mp4"
+    }
+  ],
+  "idleMotions": {
+    "large": [
+      {
+        "id": "idle-default-large",
+        "emotion": "neutral",
+        "path": "../example/motion/wait.mp4"
+      }
+    ],
+    "small": [
+      {
+        "id": "idle-default-small",
+        "emotion": "neutral",
+        "path": "../example/motion/talk_wait.mp4"
+      }
+    ]
+  },
+  "speechMotions": {
+    "large": [
+      {
+        "id": "talk-default-large",
+        "emotion": "neutral",
+        "path": "../example/motion/talk_large.mp4"
+      }
+    ],
+    "small": [
+      {
+        "id": "talk-default-small",
+        "emotion": "neutral",
+        "path": "../example/motion/talk_small.mp4"
+      }
+    ]
+  },
+  "speechTransitions": {
+    "enter": {
+      "id": "wait-talk",
+      "emotion": "neutral",
+      "path": "../example/motion/wait_talk.mp4"
+    },
+    "exit": {
+      "id": "talk-wait",
+      "emotion": "neutral",
+      "path": "../example/motion/talk_wait.mp4"
+    }
+  },
+  "audioProfile": {
+    "ttsEngine": "voicevox",
+    "voicevoxUrl": "http://127.0.0.1:50021",
+    "speakerId": 1
+  },
+  "assets": {
+    "tempDir": "./tmp"
+  }
+}
