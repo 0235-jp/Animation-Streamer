@@ -2,7 +2,7 @@
 
 ## 1. プロジェクト構成 (予定)
 ```
-ai-streamer/
+ai-animation-streamer/
 ├─ src/
 │  ├─ app.ts                 # Express起動, DI初期化
 │  ├─ server.ts              # HTTPサーバーエントリポイント
@@ -40,6 +40,9 @@ ai-streamer/
 - サンプル:
 ```json
 {
+  "server": {
+    "port": 4000
+  },
   "rtmp": {
     "outputUrl": "rtmp://localhost:1935/live/main"
   },
@@ -60,6 +63,8 @@ ai-streamer/
   }
 }
 ```
+- `waitingMotions` は1件以上必須。`path` はffmpegが読めるローカルパス。
+- `server.port` でAPIサーバーのListenポートを指定。環境変数`PORT`があれば優先される。
 - `waitingMotions` は1件以上必須。`path` はffmpegが読めるローカルパス。
 - `audioProfile` は唯一のTTS設定として `text` 実装時に使用し、VOICEVOX のURLやspeakerIdを含む。現段階では存在だけ定義。
 

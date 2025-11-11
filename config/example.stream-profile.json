@@ -1,0 +1,28 @@
+{
+  "server": {
+    "port": 4000
+  },
+  "rtmp": {
+    "outputUrl": "rtmp://127.0.0.1:1935/live/main"
+  },
+  "waitingMotions": [
+    {
+      "id": "idle-default",
+      "path": "../example/motion/waiting.mp4"
+    }
+  ],
+  "speechMotions": [
+    {
+      "id": "talk-default",
+      "path": "../example/motion/waiting.mp4"
+    }
+  ],
+  "audioProfile": {
+    "ttsEngine": "voicevox",
+    "voicevoxUrl": "http://127.0.0.1:50021",
+    "speakerId": 1
+  },
+  "assets": {
+    "tempDir": "./tmp"
+  }
+}
