@@ -1,8 +1,8 @@
-# AI Animation Streamer – 詳細設計書
+# Animation Streamer – 詳細設計書
 
 ## 1. プロジェクト構成 (予定)
 ```
-ai-animation-streamer/
+animation-streamer/
 ├─ src/
 │  ├─ app.ts                 # Express起動, DI初期化
 │  ├─ server.ts              # HTTPサーバーエントリポイント

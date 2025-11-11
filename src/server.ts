@@ -40,7 +40,7 @@ async function bootstrap() {
   const configuredPort = profile.server?.port ?? 4000;
   const port = Number(process.env.PORT ?? configuredPort);
   app.listen(port, () => {
-    logger.info({ port }, 'AI Animation Streamer API ready');
+    logger.info({ port }, 'Animation Streamer API ready');
   });
 }
 

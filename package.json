@@ -1,5 +1,5 @@
 {
-  "name": "ai-animation-streamer",
+  "name": "animation-streamer",
   "version": "0.0.1",
   "description": "",
   "main": "dist/server.js",

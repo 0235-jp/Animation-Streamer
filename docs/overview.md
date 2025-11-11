@@ -1,4 +1,4 @@
-# AI Animation Streamer – 概要設計書
+# Animation Streamer – 概要設計書
 
 ## 目的
 - ローカル環境で待機モーション動画を常時ストリームし、OBSなどの配信ツールから取得してYouTube等へ中継できるようにする。
