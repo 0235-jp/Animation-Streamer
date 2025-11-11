@@ -24,6 +24,7 @@ export interface ClipPlanResult {
 }
 
 const EPSILON_MS = 50
+const MAX_REPEAT_CLIPS = 1000 // prevent runaway loops when repeating a single clip for long durations
 
 const normalizeEmotion = (value?: string) => value?.trim().toLowerCase()
 
@@ -170,7 +171,7 @@ export class ClipPlanner {
     while (covered + EPSILON_MS < durationMs || !clips.length) {
       clips.push({ ...clip })
       covered += duration
-      if (clips.length > 1000) break
+      if (clips.length > MAX_REPEAT_CLIPS) break
     }
     return {
       clips,
