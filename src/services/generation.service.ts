@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { ResolvedAction, ResolvedConfig } from '../config/loader'
 import { ClipPlanner } from './clip-planner'
 import { MediaPipeline, type ClipSource } from './media-pipeline'
@@ -325,7 +326,7 @@ export class GenerationService {
   }
 
   private async moveToTemp(sourcePath: string, prefix: string): Promise<string> {
-    const fileName = `${prefix}-${Date.now()}-${Math.floor(Math.random() * 10_000)}.mp4`
+    const fileName = `${prefix}-${randomUUID()}.mp4`
     const destination = path.join(this.config.assets.absoluteTempDir, fileName)
     try {
       await fs.rename(sourcePath, destination)
