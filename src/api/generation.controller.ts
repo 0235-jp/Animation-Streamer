@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { ZodError } from 'zod'
 import { generateRequestSchema } from './schema'
 import { GenerationService, ActionProcessingError } from '../services/generation.service'
 import type { GenerateRequestPayload } from '../types/generate'
@@ -14,6 +15,9 @@ export const createGenerationRouter = (generationService: GenerationService): Ro
     try {
       payload = generateRequestSchema.parse(req.body)
     } catch (error) {
+      if (error instanceof ZodError) {
+        return res.status(400).json({ message: 'Invalid request', issues: error.issues })
+      }
       return res.status(400).json({ message: error instanceof Error ? error.message : 'Invalid request' })
     }
 
