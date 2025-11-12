@@ -3,7 +3,7 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { ResolvedAction, ResolvedConfig } from '../config/loader'
 import { ClipPlanner } from './clip-planner'
-import { MediaPipeline, type ClipSource } from './media-pipeline'
+import { MediaPipeline, type ClipSource, NoAudioTrackError } from './media-pipeline'
 import { VoicevoxClient } from './voicevox'
 import type { ActionResult, GenerateDefaults, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler } from '../types/generate'
 import { logger } from '../utils/logger'
@@ -384,22 +384,38 @@ export class GenerationService {
     requestId: string
   ): Promise<PlannedAction> {
     const [plan, actionConfig] = await this.buildCustomActionPlanData(item, requestId)
-    let audioPath: string
+    let extractedAudio: string | undefined
     try {
-      const extracted = await this.mediaPipeline.extractAudioTrack(
+      extractedAudio = await this.mediaPipeline.extractAudioTrack(
         actionConfig.absolutePath,
         jobDir,
         actionConfig.id
       )
-      audioPath = await this.mediaPipeline.fitAudioDuration(
-        extracted,
-        plan.durationMs,
-        jobDir,
-        `${actionConfig.id}-fit`
-      )
-    } catch {
-      audioPath = await this.mediaPipeline.createSilentAudio(plan.durationMs, jobDir)
+    } catch (error) {
+      if (error instanceof NoAudioTrackError) {
+        const audioPath = await this.mediaPipeline.createSilentAudio(plan.durationMs, jobDir)
+        return {
+          ...plan,
+          audioPath,
+        }
+      }
+      throw error
     }
+
+    if (!extractedAudio) {
+      const audioPath = await this.mediaPipeline.createSilentAudio(plan.durationMs, jobDir)
+      return {
+        ...plan,
+        audioPath,
+      }
+    }
+
+    const audioPath = await this.mediaPipeline.fitAudioDuration(
+      extractedAudio,
+      plan.durationMs,
+      jobDir,
+      `${actionConfig.id}-fit`
+    )
     return {
       ...plan,
       audioPath,

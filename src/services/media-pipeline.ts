@@ -22,6 +22,13 @@ const AUDIO_SAMPLE_RATE = 48_000
 const AUDIO_CHANNEL_LAYOUT = 'stereo'
 const AUDIO_CHANNEL_COUNT = 2
 
+export class NoAudioTrackError extends Error {
+  constructor(public readonly sourcePath: string) {
+    super(`Audio track not found in ${sourcePath}`)
+    this.name = 'NoAudioTrackError'
+  }
+}
+
 export class MediaPipeline {
   private readonly tempDir: string
   private readonly videoDurationCache = new Map<string, number>()
@@ -199,6 +206,10 @@ export class MediaPipeline {
   }
 
   async extractAudioTrack(videoPath: string, jobDir?: string, prefix = 'action-audio'): Promise<string> {
+    const hasAudio = await this.hasAudioStream(videoPath)
+    if (!hasAudio) {
+      throw new NoAudioTrackError(videoPath)
+    }
     const dir = jobDir ?? (await this.createJobDir())
     const filePath = path.join(dir, `${prefix}-${randomUUID()}.wav`)
     await runCommand('ffmpeg', [
@@ -218,6 +229,21 @@ export class MediaPipeline {
       filePath,
     ])
     return filePath
+  }
+
+  private async hasAudioStream(videoPath: string): Promise<boolean> {
+    const output = await runCommandWithOutput('ffprobe', [
+      '-v',
+      'error',
+      '-select_streams',
+      'a',
+      '-show_entries',
+      'stream=index',
+      '-of',
+      'csv=p=0',
+      videoPath,
+    ])
+    return output.trim().length > 0
   }
 
   async normalizeAudio(inputPath: string, jobDir?: string, prefix = 'audio'): Promise<string> {
