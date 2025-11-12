@@ -38,6 +38,9 @@ interface CombinedResult {
   durationMs: number
 }
 
+type BaseActionPlan = Omit<PlannedAction, 'audioPath'>
+type IdlePlanData = BaseActionPlan & { requestedDurationMs: number }
+
 type StreamBatchResult = { kind: 'stream'; results: ActionResult[] }
 type CombinedBatchResult = { kind: 'combined'; combined: CombinedResult }
 
@@ -186,47 +189,13 @@ export class GenerationService {
     defaults: GenerateDefaults,
     requestId: string
   ): Promise<ActionResult> {
-    const params = item.params ?? {}
-    const text = this.ensureString(params.text, 'text', requestId)
-    const emotion = this.ensureOptionalString(params.emotion) ?? defaults.emotion ?? 'neutral'
-
     const jobDir = await this.mediaPipeline.createJobDir()
     try {
-      const audioPath = path.join(jobDir, `voice-${requestId}.wav`)
-      await this.voicevox.synthesize(text, audioPath)
-      const normalizedAudio = await this.mediaPipeline.normalizeAudio(audioPath, jobDir, `voice-${requestId}`)
-      const audioDuration = await this.mediaPipeline.getAudioDurationMs(normalizedAudio)
-
-      const plan = await this.clipPlanner.buildSpeechPlan(emotion, audioDuration)
-      const talkDuration = plan.talkDurationMs ?? plan.totalDurationMs
-      const fittedAudio = await this.mediaPipeline.fitAudioDuration(
-        normalizedAudio,
-        talkDuration,
-        jobDir,
-        `voice-${requestId}-fit`
-      )
-
-      const audioSegments: string[] = []
-      if (plan.enterDurationMs && plan.enterDurationMs > 0) {
-        const pre = await this.mediaPipeline.createSilentAudio(plan.enterDurationMs, jobDir)
-        audioSegments.push(pre)
-      }
-      audioSegments.push(fittedAudio)
-      if (plan.exitDurationMs && plan.exitDurationMs > 0) {
-        const post = await this.mediaPipeline.createSilentAudio(plan.exitDurationMs, jobDir)
-        audioSegments.push(post)
-      }
-
-      let finalAudioPath = fittedAudio
-      if (audioSegments.length > 1) {
-        const { outputPath } = await this.mediaPipeline.concatAudioFiles(audioSegments, jobDir)
-        finalAudioPath = outputPath
-      }
-
+      const plan = await this.buildSpeakPlan(item, defaults, jobDir, requestId)
       const { outputPath, durationMs } = await this.mediaPipeline.compose({
         clips: plan.clips,
-        audioPath: finalAudioPath,
-        durationMs: plan.totalDurationMs,
+        audioPath: plan.audioPath,
+        durationMs: plan.durationMs,
         jobDir,
       })
 
@@ -248,17 +217,12 @@ export class GenerationService {
     defaults: GenerateDefaults,
     requestId: string
   ): Promise<ActionResult> {
-    const params = item.params ?? {}
-    const durationMs = this.ensurePositiveNumber(params.durationMs, 'durationMs', requestId)
-    const motionId = this.ensureOptionalString(params.motionId) ?? defaults.idleMotionId
-
-    const emotion = this.ensureOptionalString(params.emotion)
-    const plan = await this.clipPlanner.buildIdlePlan(durationMs, motionId, emotion)
     const jobDir = await this.mediaPipeline.createJobDir()
     try {
+      const plan = await this.buildIdlePlanData(item, defaults, requestId)
       const { outputPath, durationMs: actualDuration } = await this.mediaPipeline.compose({
         clips: plan.clips,
-        durationMs,
+        durationMs: plan.requestedDurationMs,
         jobDir,
       })
       const finalPath = await this.moveToTemp(outputPath, `idle-${requestId}`)
@@ -275,19 +239,12 @@ export class GenerationService {
   }
 
   private async handleCustomAction(item: GenerateRequestItem, requestId: string): Promise<ActionResult> {
-    if (item.action === 'speak' || item.action === 'idle') {
-      throw new ActionProcessingError('予約語はactionsに登録できません', requestId)
-    }
-    const action = this.actionsMap.get(item.action)
-    if (!action) {
-      throw new ActionProcessingError(`未定義のアクションです: ${item.action}`, requestId)
-    }
-    const plan = await this.clipPlanner.buildActionClip(action)
+    const [plan] = await this.buildCustomActionPlanData(item, requestId)
     const jobDir = await this.mediaPipeline.createJobDir()
     try {
       const { outputPath, durationMs } = await this.mediaPipeline.compose({
         clips: plan.clips,
-        durationMs: plan.totalDurationMs,
+        durationMs: plan.durationMs,
         jobDir,
       })
       const finalPath = await this.moveToTemp(outputPath, `action-${requestId}`)
@@ -349,6 +306,15 @@ export class GenerationService {
     jobDir: string,
     requestId: string
   ): Promise<PlannedAction> {
+    return this.buildSpeakPlan(item, defaults, jobDir, requestId)
+  }
+
+  private async buildSpeakPlan(
+    item: GenerateRequestItem,
+    defaults: GenerateDefaults,
+    jobDir: string,
+    requestId: string
+  ): Promise<PlannedAction> {
     const params = item.params ?? {}
     const text = this.ensureString(params.text, 'text', requestId)
     const emotion = this.ensureOptionalString(params.emotion) ?? defaults.emotion ?? 'neutral'
@@ -400,19 +366,14 @@ export class GenerationService {
     jobDir: string,
     requestId: string
   ): Promise<PlannedAction> {
-    const params = item.params ?? {}
-    const durationMs = this.ensurePositiveNumber(params.durationMs, 'durationMs', requestId)
-    const motionId = this.ensureOptionalString(params.motionId) ?? defaults.idleMotionId
-    const emotion = this.ensureOptionalString(params.emotion)
-    const plan = await this.clipPlanner.buildIdlePlan(durationMs, motionId, emotion)
-    const planDuration = plan.totalDurationMs
-    const audioPath = await this.mediaPipeline.createSilentAudio(planDuration, jobDir)
+    const plan = await this.buildIdlePlanData(item, defaults, requestId)
+    const audioPath = await this.mediaPipeline.createSilentAudio(plan.durationMs, jobDir)
     return {
-      id: requestId,
-      action: item.action,
+      id: plan.id,
+      action: plan.action,
       clips: plan.clips,
       motionIds: plan.motionIds,
-      durationMs: planDuration,
+      durationMs: plan.durationMs,
       audioPath,
     }
   }
@@ -422,6 +383,53 @@ export class GenerationService {
     jobDir: string,
     requestId: string
   ): Promise<PlannedAction> {
+    const [plan, actionConfig] = await this.buildCustomActionPlanData(item, requestId)
+    let audioPath: string
+    try {
+      const extracted = await this.mediaPipeline.extractAudioTrack(
+        actionConfig.absolutePath,
+        jobDir,
+        actionConfig.id
+      )
+      audioPath = await this.mediaPipeline.fitAudioDuration(
+        extracted,
+        plan.durationMs,
+        jobDir,
+        `${actionConfig.id}-fit`
+      )
+    } catch {
+      audioPath = await this.mediaPipeline.createSilentAudio(plan.durationMs, jobDir)
+    }
+    return {
+      ...plan,
+      audioPath,
+    }
+  }
+
+  private async buildIdlePlanData(
+    item: GenerateRequestItem,
+    defaults: GenerateDefaults,
+    requestId: string
+  ): Promise<IdlePlanData> {
+    const params = item.params ?? {}
+    const durationMs = this.ensurePositiveNumber(params.durationMs, 'durationMs', requestId)
+    const motionId = this.ensureOptionalString(params.motionId) ?? defaults.idleMotionId
+    const emotion = this.ensureOptionalString(params.emotion)
+    const plan = await this.clipPlanner.buildIdlePlan(durationMs, motionId, emotion)
+    return {
+      id: requestId,
+      action: item.action,
+      clips: plan.clips,
+      motionIds: plan.motionIds,
+      durationMs: plan.totalDurationMs,
+      requestedDurationMs: durationMs,
+    }
+  }
+
+  private async buildCustomActionPlanData(
+    item: GenerateRequestItem,
+    requestId: string
+  ): Promise<[BaseActionPlan, ResolvedAction]> {
     if (item.action === 'speak' || item.action === 'idle') {
       throw new ActionProcessingError('予約語はactionsに登録できません', requestId)
     }
@@ -430,21 +438,14 @@ export class GenerationService {
       throw new ActionProcessingError(`未定義のアクションです: ${item.action}`, requestId)
     }
     const plan = await this.clipPlanner.buildActionClip(action)
-    let audioPath: string
-    try {
-      const extracted = await this.mediaPipeline.extractAudioTrack(action.absolutePath, jobDir, action.id)
-      audioPath = await this.mediaPipeline.fitAudioDuration(extracted, plan.totalDurationMs, jobDir, `${action.id}-fit`)
-    } catch {
-      audioPath = await this.mediaPipeline.createSilentAudio(plan.totalDurationMs, jobDir)
-    }
-    return {
+    const basePlan: BaseActionPlan = {
       id: requestId,
       action: item.action,
       clips: plan.clips,
       motionIds: plan.motionIds,
       durationMs: plan.totalDurationMs,
-      audioPath,
     }
+    return [basePlan, action]
   }
 }
 
