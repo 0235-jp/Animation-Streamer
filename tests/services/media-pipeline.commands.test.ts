@@ -1,5 +1,6 @@
+import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest'
 import { MediaPipeline, NoAudioTrackError } from '../../src/services/media-pipeline'
 import { runCommand, runCommandWithOutput } from '../../src/utils/process'
 
@@ -14,10 +15,19 @@ const runCommandWithOutputMock = vi.mocked(runCommandWithOutput)
 const tempDir = path.resolve(process.cwd(), 'config/tmp/tests-commands')
 
 describe('MediaPipeline command building', () => {
+  beforeAll(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true })
+    await fs.mkdir(tempDir, { recursive: true })
+  })
+
   beforeEach(() => {
     runCommandMock.mockClear()
     runCommandWithOutputMock.mockReset()
     runCommandWithOutputMock.mockResolvedValue('1.0')
+  })
+
+  afterAll(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true })
   })
 
   it('invokes ffmpeg concat with silent audio when no audio track is provided', async () => {

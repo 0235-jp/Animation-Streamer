@@ -1,17 +1,42 @@
 import path from 'node:path'
 import { describe, it, expect, beforeAll } from 'vitest'
 import { loadConfig, type ResolvedConfig } from '../../src/config/loader'
-import { MediaPipeline } from '../../src/services/media-pipeline'
+import type { MediaPipeline } from '../../src/services/media-pipeline'
 import { ClipPlanner } from '../../src/services/clip-planner'
+
+class StubMediaPipeline implements Pick<MediaPipeline, 'getVideoDurationMs'> {
+  constructor(private readonly durations: Map<string, number>) {}
+
+  async getVideoDurationMs(assetPath: string): Promise<number> {
+    const duration = this.durations.get(assetPath)
+    if (duration === undefined) {
+      throw new Error(`Missing duration for ${assetPath}`)
+    }
+    return duration
+  }
+}
 
 describe('ClipPlanner timeline generation', () => {
   let clipPlanner: ClipPlanner
   let config: ResolvedConfig
 
   beforeAll(async () => {
-    const configPath = path.resolve(process.cwd(), 'config/stream-profile.json')
+    const configPath = path.resolve(process.cwd(), 'config/example.stream-profile.json')
     config = await loadConfig(configPath)
-    const mediaPipeline = new MediaPipeline(config.assets.absoluteTempDir)
+    const durations = new Map<string, number>()
+    const register = (assetPath?: string, fallback = 1200) => {
+      if (assetPath && !durations.has(assetPath)) {
+        durations.set(assetPath, fallback)
+      }
+    }
+    config.actions.forEach((action) => register(action.absolutePath))
+    config.idleMotions.large.forEach((motion) => register(motion.absolutePath, 1500))
+    config.idleMotions.small.forEach((motion) => register(motion.absolutePath, 800))
+    config.speechMotions.large.forEach((motion) => register(motion.absolutePath, 900))
+    config.speechMotions.small.forEach((motion) => register(motion.absolutePath, 400))
+    config.speechTransitions?.enter?.forEach((motion) => register(motion.absolutePath, 200))
+    config.speechTransitions?.exit?.forEach((motion) => register(motion.absolutePath, 200))
+    const mediaPipeline = new StubMediaPipeline(durations)
     clipPlanner = new ClipPlanner(mediaPipeline, config.speechMotions, config.idleMotions, config.speechTransitions)
   })
 
