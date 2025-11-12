@@ -152,3 +152,22 @@ components:
         id:
           type: string
           description: Identifier of the request that failed (if applicable)
+        issues:
+          type: array
+          description: Present when validation fails; mirrors Zod's issue format
+          items:
+            $ref: '#/components/schemas/ValidationIssue'
+    ValidationIssue:
+      type: object
+      description: Subset of the validation issue data returned by Zod
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        path:
+          type: array
+          items:
+            oneOf:
+              - type: string
+              - type: integer
