@@ -408,7 +408,7 @@ export class GenerationService {
     requestId: string
   ): Promise<PlannedAction> {
     const [plan, actionConfig] = await this.buildCustomActionPlanData(item, requestId)
-    let extractedAudio: string | undefined
+    let extractedAudio: string
     try {
       extractedAudio = await this.mediaPipeline.extractAudioTrack(
         actionConfig.absolutePath,
@@ -424,14 +424,6 @@ export class GenerationService {
         }
       }
       throw error
-    }
-
-    if (!extractedAudio) {
-      const audioPath = await this.mediaPipeline.createSilentAudio(plan.durationMs, jobDir)
-      return {
-        ...plan,
-        audioPath,
-      }
     }
 
     const audioPath = await this.mediaPipeline.fitAudioDuration(
@@ -470,10 +462,11 @@ export class GenerationService {
     item: GenerateRequestItem,
     requestId: string
   ): Promise<[BaseActionPlan, ResolvedAction]> {
-    if (item.action === 'speak' || item.action === 'idle') {
+    const actionName = item.action.toLowerCase()
+    if (actionName === 'speak' || actionName === 'idle') {
       throw new ActionProcessingError('予約語はactionsに登録できません', requestId)
     }
-    const action = this.actionsMap.get(item.action)
+    const action = this.actionsMap.get(actionName)
     if (!action) {
       throw new ActionProcessingError(`未定義のアクションです: ${item.action}`, requestId)
     }
