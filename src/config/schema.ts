@@ -23,6 +23,7 @@ export const transitionMotionSchema = z.object({
   emotion: z.string().min(1).default('neutral'),
   path: z.string().min(1),
 })
+const transitionCollectionSchema = z.union([transitionMotionSchema, z.array(transitionMotionSchema).min(1)])
 
 export const audioProfileSchema = z.object({
   ttsEngine: z.literal('voicevox'),
@@ -41,8 +42,8 @@ export const configSchema = z.object({
   speechMotions: sizedMotionSchema,
   speechTransitions: z
     .object({
-      enter: transitionMotionSchema.optional(),
-      exit: transitionMotionSchema.optional(),
+      enter: transitionCollectionSchema.optional(),
+      exit: transitionCollectionSchema.optional(),
     })
     .optional(),
   audioProfile: audioProfileSchema,

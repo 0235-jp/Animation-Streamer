@@ -38,8 +38,8 @@ export class ClipPlanner {
   >
   private readonly idleLarge: ResolvedIdleMotion[]
   private readonly idleSmall: ResolvedIdleMotion[]
-  private readonly speechEnterTransition?: ResolvedTransitionMotion
-  private readonly speechExitTransition?: ResolvedTransitionMotion
+  private readonly speechEnterTransitions?: Map<string, ResolvedTransitionMotion[]>
+  private readonly speechExitTransitions?: Map<string, ResolvedTransitionMotion[]>
 
   constructor(
     private readonly mediaPipeline: MediaPipeline,
@@ -50,8 +50,8 @@ export class ClipPlanner {
     this.speechPools = this.buildSpeechPools(speechPools)
     this.idleLarge = idlePools.large
     this.idleSmall = idlePools.small
-    this.speechEnterTransition = speechTransitions?.enter
-    this.speechExitTransition = speechTransitions?.exit
+    this.speechEnterTransitions = this.buildTransitionMap(speechTransitions?.enter)
+    this.speechExitTransitions = this.buildTransitionMap(speechTransitions?.exit)
   }
 
   async buildSpeechPlan(emotion: string | undefined, durationMs: number): Promise<ClipPlanResult> {
@@ -64,16 +64,18 @@ export class ClipPlanner {
     let enterDurationMs: number | undefined
     let exitDurationMs: number | undefined
 
-    if (this.speechEnterTransition && this.matchesEmotion(this.speechEnterTransition.emotion, normalizedEmotion)) {
-      const enterClip = await this.buildTransitionClip(this.speechEnterTransition)
+    const enterTransition = this.pickTransitionMotion(this.speechEnterTransitions, normalizedEmotion)
+    if (enterTransition) {
+      const enterClip = await this.buildTransitionClip(enterTransition)
       clips.unshift(enterClip)
       motionIds.unshift(enterClip.id)
       totalDuration += enterClip.durationMs
       enterDurationMs = enterClip.durationMs
     }
 
-    if (this.speechExitTransition && this.matchesEmotion(this.speechExitTransition.emotion, normalizedEmotion)) {
-      const exitClip = await this.buildTransitionClip(this.speechExitTransition)
+    const exitTransition = this.pickTransitionMotion(this.speechExitTransitions, normalizedEmotion)
+    if (exitTransition) {
+      const exitClip = await this.buildTransitionClip(exitTransition)
       clips.push(exitClip)
       motionIds.push(exitClip.id)
       totalDuration += exitClip.durationMs
@@ -282,12 +284,34 @@ export class ClipPlanner {
     }
   }
 
-  private matchesEmotion(transitionEmotion: string | undefined, targetEmotion?: string | null) {
-    const normalizedTransition = transitionEmotion?.trim().toLowerCase() || 'neutral'
-    const normalizedTarget = targetEmotion?.trim().toLowerCase()
-    if (!normalizedTarget) {
-      return normalizedTransition === 'neutral'
+  private buildTransitionMap(motions?: ResolvedTransitionMotion[]): Map<string, ResolvedTransitionMotion[]> | undefined {
+    if (!motions?.length) return undefined
+    const map = new Map<string, ResolvedTransitionMotion[]>()
+    for (const motion of motions) {
+      const emotion = normalizeEmotion(motion.emotion) ?? 'neutral'
+      if (!map.has(emotion)) {
+        map.set(emotion, [])
+      }
+      map.get(emotion)!.push(motion)
     }
-    return normalizedTransition === normalizedTarget
+    return map
+  }
+
+  private pickTransitionMotion(
+    map: Map<string, ResolvedTransitionMotion[]> | undefined,
+    targetEmotion?: string | null
+  ): ResolvedTransitionMotion | undefined {
+    if (!map) return undefined
+    const normalizedTarget = targetEmotion ?? undefined
+    if (normalizedTarget) {
+      const motions = map.get(normalizedTarget)
+      if (motions?.length) return motions[0]
+    }
+    const neutralMotions = map.get('neutral')
+    if (neutralMotions?.length) return neutralMotions[0]
+    for (const motions of map.values()) {
+      if (motions.length) return motions[0]
+    }
+    return undefined
   }
 }

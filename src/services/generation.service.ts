@@ -36,13 +36,14 @@ interface IndexedRequest {
 interface CombinedResult {
   outputPath: string
   durationMs: number
+  motionIds?: string[]
 }
 
 type BaseActionPlan = Omit<PlannedAction, 'audioPath'>
 type IdlePlanData = BaseActionPlan & { requestedDurationMs: number }
 
 type StreamBatchResult = { kind: 'stream'; results: ActionResult[] }
-type CombinedBatchResult = { kind: 'combined'; combined: CombinedResult }
+type CombinedBatchResult = { kind: 'combined'; result: CombinedResult }
 
 export class GenerationService {
   private readonly config: ResolvedConfig
@@ -72,28 +73,30 @@ export class GenerationService {
       emotion: payload.defaults?.emotion ?? 'neutral',
       idleMotionId: payload.defaults?.idleMotionId,
     }
+    const includeDebug = Boolean(payload.debug)
     const indexedRequests: IndexedRequest[] = payload.requests.map((item, index) => ({
       item,
       requestId: String(index + 1),
     }))
 
     if (payload.stream) {
-      const results = await this.processStreamingBatch(indexedRequests, defaults, handler)
+      const results = await this.processStreamingBatch(indexedRequests, defaults, includeDebug, handler)
       return { kind: 'stream', results }
     }
-    const combined = await this.processCombinedBatch(indexedRequests, defaults)
-    return { kind: 'combined', combined }
+    const combined = await this.processCombinedBatch(indexedRequests, defaults, includeDebug)
+    return { kind: 'combined', result: combined }
   }
 
   private async processStreamingBatch(
     indexedRequests: IndexedRequest[],
     defaults: GenerateDefaults,
+    includeDebug: boolean,
     handler?: StreamPushHandler
   ): Promise<ActionResult[]> {
     const results: ActionResult[] = []
     for (const { item, requestId } of indexedRequests) {
       try {
-        const result = await this.processSingle(item, defaults, requestId)
+        const result = await this.processSingle(item, defaults, requestId, includeDebug)
         if (handler?.onResult) {
           await handler.onResult(result)
         }
@@ -114,7 +117,8 @@ export class GenerationService {
 
   private async processCombinedBatch(
     indexedRequests: IndexedRequest[],
-    defaults: GenerateDefaults
+    defaults: GenerateDefaults,
+    includeDebug: boolean
   ): Promise<CombinedResult> {
     const plannedActions: PlannedAction[] = []
     const jobDir = await this.mediaPipeline.createJobDir()
@@ -145,7 +149,11 @@ export class GenerationService {
         jobDir,
       })
       const combinedPath = await this.moveToTemp(combinedTempPath, 'batch')
-      return { outputPath: combinedPath, durationMs: Math.round(totalDuration) }
+      return {
+        outputPath: combinedPath,
+        durationMs: Math.round(totalDuration),
+        motionIds: includeDebug ? plannedActions.flatMap((action) => action.motionIds) : undefined,
+      }
     } finally {
       await this.mediaPipeline.removeJobDir(jobDir)
     }
@@ -154,16 +162,17 @@ export class GenerationService {
   private async processSingle(
     item: GenerateRequestItem,
     defaults: GenerateDefaults,
-    requestId: string
+    requestId: string,
+    includeDebug: boolean
   ): Promise<ActionResult> {
     const actionName = item.action.toLowerCase()
     switch (actionName) {
       case 'speak':
-        return this.handleSpeak(item, defaults, requestId)
+        return this.handleSpeak(item, defaults, requestId, includeDebug)
       case 'idle':
-        return this.handleIdle(item, defaults, requestId)
+        return this.handleIdle(item, defaults, requestId, includeDebug)
       default:
-        return this.handleCustomAction(item, requestId)
+        return this.handleCustomAction(item, requestId, includeDebug)
     }
   }
 
@@ -187,7 +196,8 @@ export class GenerationService {
   private async handleSpeak(
     item: GenerateRequestItem,
     defaults: GenerateDefaults,
-    requestId: string
+    requestId: string,
+    includeDebug: boolean
   ): Promise<ActionResult> {
     const jobDir = await this.mediaPipeline.createJobDir()
     try {
@@ -200,13 +210,16 @@ export class GenerationService {
       })
 
       const finalPath = await this.moveToTemp(outputPath, `speak-${requestId}`)
-      return {
+      const result: ActionResult = {
         id: requestId,
         action: item.action,
         outputPath: finalPath,
         durationMs: Math.round(durationMs),
-        motionIds: plan.motionIds,
       }
+      if (includeDebug) {
+        result.motionIds = plan.motionIds
+      }
+      return result
     } finally {
       await this.mediaPipeline.removeJobDir(jobDir)
     }
@@ -215,7 +228,8 @@ export class GenerationService {
   private async handleIdle(
     item: GenerateRequestItem,
     defaults: GenerateDefaults,
-    requestId: string
+    requestId: string,
+    includeDebug: boolean
   ): Promise<ActionResult> {
     const jobDir = await this.mediaPipeline.createJobDir()
     try {
@@ -226,19 +240,26 @@ export class GenerationService {
         jobDir,
       })
       const finalPath = await this.moveToTemp(outputPath, `idle-${requestId}`)
-      return {
+      const result: ActionResult = {
         id: requestId,
         action: item.action,
         outputPath: finalPath,
         durationMs: Math.round(actualDuration),
-        motionIds: plan.motionIds,
       }
+      if (includeDebug) {
+        result.motionIds = plan.motionIds
+      }
+      return result
     } finally {
       await this.mediaPipeline.removeJobDir(jobDir)
     }
   }
 
-  private async handleCustomAction(item: GenerateRequestItem, requestId: string): Promise<ActionResult> {
+  private async handleCustomAction(
+    item: GenerateRequestItem,
+    requestId: string,
+    includeDebug: boolean
+  ): Promise<ActionResult> {
     const [plan] = await this.buildCustomActionPlanData(item, requestId)
     const jobDir = await this.mediaPipeline.createJobDir()
     try {
@@ -248,13 +269,16 @@ export class GenerationService {
         jobDir,
       })
       const finalPath = await this.moveToTemp(outputPath, `action-${requestId}`)
-      return {
+      const result: ActionResult = {
         id: requestId,
         action: item.action,
         outputPath: finalPath,
         durationMs: Math.round(durationMs),
-        motionIds: plan.motionIds,
       }
+      if (includeDebug) {
+        result.motionIds = plan.motionIds
+      }
+      return result
     } finally {
       await this.mediaPipeline.removeJobDir(jobDir)
     }

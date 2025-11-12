@@ -44,7 +44,7 @@ Controller     \                    /
 - **SpeechTaskQueue (将来実装)**: `text` APIから受けたタスクを受信順でFIFO管理。生成完了が前後しても再生順は保証する。
 - **GenerationService**: `POST /api/generate` のアクション列をバリデーションし、`stream` フラグに応じて逐次 or 一括レスポンスを返す。`speak`/`idle`/任意アクションごとにVOICEVOX→モーション合成を実行する。
 - **ClipPlanner**: `animation-streamer-example` に実装されている Large/Small clip allocation ロジックをサーバー側に移植。emotionやモーションタイプに応じて必要時間をカバーするクリップリストを決定する。
-- `speechTransitions` が設定されている場合は、`speak` アクションの先頭/末尾に idle→talk / talk→idle のトランジション動画を自動で挿入し、音声にも同じ長さのサイレントパディングを追加してシームレスに接続する。トランジションにも `emotion` を指定でき、対象の発話感情と一致した場合のみ挿入される。
+- `speechTransitions` が設定されている場合は、`speak` アクションの先頭/末尾に idle→talk / talk→idle のトランジション動画を自動で挿入し、音声にも同じ長さのサイレントパディングを追加してシームレスに接続する。トランジションにも `emotion` を指定でき、`speechMotions` と同じく「一致 → neutral → その他」の順で最適なモーションが選ばれる。
 - **MediaPipeline**: ffmpegプロセスの生成/監視と、VOICEVOXなどのTTSとの橋渡し。音声と動画の合成、一時ファイルの管理を担当。`speak`ではTTS→WAV→mp4多重化、`idle`や任意アクションでは動画＋無音音声を多重化する。
 - **ConfigLoader**: JSONを読み込み、型チェック済みの設定オブジェクトをDIコンテナへ供給。
 

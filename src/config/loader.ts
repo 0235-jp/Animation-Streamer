@@ -36,8 +36,8 @@ export interface ResolvedTransitionMotion {
 }
 
 export interface ResolvedSpeechTransitions {
-  enter?: ResolvedTransitionMotion
-  exit?: ResolvedTransitionMotion
+  enter?: ResolvedTransitionMotion[]
+  exit?: ResolvedTransitionMotion[]
 }
 
 export interface ResolvedConfig
@@ -94,22 +94,24 @@ export const loadConfig = async (configPath: string): Promise<ResolvedConfig> =>
     })),
   }
 
+  const normalizeTransition = (motion: { id: string; emotion: string; path: string }): ResolvedTransitionMotion => ({
+    ...motion,
+    emotion: motion.emotion.toLowerCase(),
+    absolutePath: resolveAssetPath(motion.path),
+  })
+
+  const toTransitionList = (
+    value?: { id: string; emotion: string; path: string } | { id: string; emotion: string; path: string }[]
+  ): ResolvedTransitionMotion[] | undefined => {
+    if (!value) return undefined
+    const list = Array.isArray(value) ? value : [value]
+    return list.map(normalizeTransition)
+  }
+
   const speechTransitions: ResolvedSpeechTransitions | undefined = parsed.speechTransitions
     ? {
-        enter: parsed.speechTransitions.enter
-          ? {
-              ...parsed.speechTransitions.enter,
-              emotion: parsed.speechTransitions.enter.emotion.toLowerCase(),
-              absolutePath: resolveAssetPath(parsed.speechTransitions.enter.path),
-            }
-          : undefined,
-        exit: parsed.speechTransitions.exit
-          ? {
-              ...parsed.speechTransitions.exit,
-              emotion: parsed.speechTransitions.exit.emotion.toLowerCase(),
-              absolutePath: resolveAssetPath(parsed.speechTransitions.exit.path),
-            }
-          : undefined,
+        enter: toTransitionList(parsed.speechTransitions.enter),
+        exit: toTransitionList(parsed.speechTransitions.exit),
       }
     : undefined
 

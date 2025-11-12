@@ -64,8 +64,14 @@ animation-streamer/
     ]
   },
   "speechTransitions": {
-    "enter": { "id": "enter-neutral", "emotion": "neutral", "path": "../example/motion/enter.mp4" },
-    "exit": { "id": "exit-neutral", "emotion": "neutral", "path": "../example/motion/exit.mp4" }
+    "enter": [
+      { "id": "enter-neutral", "emotion": "neutral", "path": "../example/motion/enter.mp4" },
+      { "id": "enter-happy", "emotion": "happy", "path": "../example/motion/enter.mp4" }
+    ],
+    "exit": [
+      { "id": "exit-neutral", "emotion": "neutral", "path": "../example/motion/exit.mp4" },
+      { "id": "exit-happy", "emotion": "happy", "path": "../example/motion/exit.mp4" }
+    ]
   },
   "audioProfile": {
     "ttsEngine": "voicevox",
@@ -77,7 +83,7 @@ animation-streamer/
 ```
 - `actions` は `action` に任意IDを指定するための単発モーション定義。`speak` / `idle` は予約語のため登録不可。
 - `idleMotions` は待機モーションのプール。`speechMotions` は `large` / `small` ごとに配列を分け、感情ごとにモーションセットを切り替えられる。
-- `speechTransitions` を設定すると、`speak` アクションの先頭に `enter`（例: idle→talk）、末尾に `exit`（例: talk→idle）を自動挿入する。遷移にも `emotion` を設定でき、対象の発話感情と一致した場合のみ挿入される。
+- `speechTransitions` を設定すると、`speak` アクションの先頭に `enter`（例: idle→talk）、末尾に `exit`（例: talk→idle）を自動挿入する。遷移にも `emotion` を設定でき、`speechMotions` と同様に「一致したemotion → neutral → その他」の優先順位で選択される。
 - `path` はffmpegが読めるローカルパス。
 - `audioProfile` は唯一のTTS設定として VOICEVOX のURLやspeakerIdを含む。
 

@@ -14,6 +14,22 @@ paths:
       description: >-
         Accepts a batch of actions (speak/idle/custom) and produces rendered clips.
         When `stream=true`, results are streamed as NDJSON chunks instead of a single JSON response.
+      x-codeSamples:
+        - lang: Shell
+          label: curl
+          source: |-
+            curl -X POST http://localhost:4000/api/generate \
+              -H 'Content-Type: application/json' \
+              -d '{
+                "stream": false,
+                "debug": true,
+                "requests": [
+                  { "action": "start" },
+                  { "action": "speak", "params": { "text": "こんにちは", "emotion": "happy" } },
+                  { "action": "idle", "params": { "durationMs": 2000 } },
+                  { "action": "speak", "params": { "text": "さようなら" } }
+                ]
+              }'
       requestBody:
         required: true
         content:
@@ -25,17 +41,17 @@ paths:
                 summary: Batch request
                 value:
                   stream: false
-                  defaults:
-                    emotion: neutral
+                  debug: true
                   requests:
-                    - action: speak
+                    - action: "start"
+                    - action: "speak"
                       params:
                         text: "こんにちは"
-                        emotion: happy
-                    - action: idle
+                        emotion: "happy"
+                    - action: "idle"
                       params:
                         durationMs: 2000
-                    - action: speak
+                    - action: "speak"
                       params:
                         text: "さようなら"
       responses:
@@ -44,12 +60,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - combined
-                properties:
-                  combined:
-                    $ref: '#/components/schemas/CombinedResult'
+                $ref: '#/components/schemas/CombinedResult'
             application/x-ndjson:
               schema:
                 type: string
@@ -96,6 +107,9 @@ components:
         metadata:
           type: object
           additionalProperties: true
+        debug:
+          type: boolean
+          description: When true, includes debugging fields such as `motionIds` in responses
     ActionRequest:
       type: object
       required:
@@ -115,7 +129,6 @@ components:
         - action
         - outputPath
         - durationMs
-        - motionIds
       properties:
         id:
           type: string
@@ -130,6 +143,7 @@ components:
           type: array
           items:
             type: string
+          description: Returned only when `debug=true`
         audioPath:
           type: string
           nullable: true
@@ -144,6 +158,11 @@ components:
         durationMs:
           type: integer
           format: int64
+        motionIds:
+          type: array
+          items:
+            type: string
+          description: Flattened motion sequence, present only when `debug=true`
     ErrorResponse:
       type: object
       properties:

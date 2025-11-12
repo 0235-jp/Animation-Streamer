@@ -17,4 +17,5 @@ export const generateRequestSchema = z.object({
     )
     .min(1),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  debug: z.boolean().optional(),
 })

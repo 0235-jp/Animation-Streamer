@@ -13,6 +13,7 @@ export interface GenerateRequestPayload {
   defaults?: GenerateDefaults
   requests: GenerateRequestItem[]
   metadata?: Record<string, unknown>
+  debug?: boolean
 }
 
 export interface ActionResult {
@@ -20,7 +21,7 @@ export interface ActionResult {
   action: string
   outputPath: string
   durationMs: number
-  motionIds: string[]
+  motionIds?: string[]
   audioPath?: string
 }
 

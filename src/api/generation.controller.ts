@@ -42,7 +42,7 @@ export const createGenerationRouter = (generationService: GenerationService): Ro
         res.write(toNdjson({ type: 'done', count: batchResult.results.length }))
         return res.end()
       }
-      return res.json({ combined: batchResult.combined })
+      return res.json(batchResult.result)
     } catch (error) {
       if (error instanceof ActionProcessingError) {
         logger.warn({ err: error, requestId: error.requestId }, 'Generation error')
