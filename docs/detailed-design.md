@@ -81,7 +81,7 @@ animation-streamer/
   "assets": { "tempDir": "./tmp" }
 }
 ```
-- `actions` は `action` に任意IDを指定するための単発モーション定義。`speak` / `idle` は予約語のため登録不可。
+- `actions` は `action` に任意IDを指定するための単発モーション定義。`speak` / `idle` は予約語のため登録不可。サーバー側ではリクエストの `action` 値を小文字へ正規化して照合するため、`config.actions[].id` も全て小文字で記述しておくこと。
 - `idleMotions` は待機モーションのプール。`speechMotions` は `large` / `small` ごとに配列を分け、感情ごとにモーションセットを切り替えられる。
 - `speechTransitions` を設定すると、`speak` アクションの先頭に `enter`（例: idle→talk）、末尾に `exit`（例: talk→idle）を自動挿入する。遷移にも `emotion` を設定でき、`speechMotions` と同様に「一致したemotion → neutral → その他」の優先順位で選択される。
 - `path` はffmpegが読めるローカルパス。
@@ -97,7 +97,7 @@ animation-streamer/
   - `currentMotionId`
 - ミューテックス (`AsyncLock`) を用い API からの `start`/`stop`/`text` 呼び出し間の競合を防ぐ。
 - `status` API 用に読み取り専用スナップショットを提供。
-- `GenerationService` はストリーム状態とは独立したジョブ（`generate` API呼び出し）を扱うため、`StreamSession` のロックとは切り離し、同時実行数やジョブキューを個別に制御する。
+- `GenerationService` はストリーム状態とは独立したジョブ（`generate` API呼び出し）を扱うため、`StreamSession` のロックとは切り離されている。現状は1リクエスト内のアクションを逐次処理し、API呼び出し単位で完結する（全体キュー／同時実行数制御は今後の拡張候補）。
 
 ## 4. IdleLoopController（待機・発話共通プレイリスト）
 - 入力: `idleMotions: Motion[]`, `outputUrl`, `ProcessManager`。
@@ -168,7 +168,7 @@ animation-streamer/
   - 必須: `durationMs`。任意: `motionId`（明示指定時はそのモーションだけで構成）、`emotion`（待機モーションの感情タグでフィルタ）。
   - 音声は生成せず、`idleMotions` をLarge優先/Small補完で `durationMs` をカバーする。必要に応じて `anullsrc` で無音AACを生成し動画長に合わせる。
 - **任意アクション（config.actions）**
-  - `action` フィールドの値は `config.actions[].id` と一致している必要がある。事前登録された動画1本を合成して出力し、音声は持たないため `anullsrc` を多重化する。
+  - `action` フィールドの値は `config.actions[].id`（小文字）と一致している必要がある。事前登録された動画1本を合成して出力し、動画に音声トラックが含まれていれば抽出して長さ調整のうえ再利用する。音声が存在しない場合のみ `anullsrc` を生成して多重化する。
 
 ### 6.3 処理フロー
 1. `GenerationService` がリクエスト全体をバリデート。`requests` が空なら400。
@@ -180,20 +180,19 @@ animation-streamer/
 4. `idle`: `ClipPlanner.selectIdleClips(duration, emotion)` → `MediaPipeline.compose(clips, null, duration)`。
 5. 任意アクション: `actions` から動画パスを取得し単体で `compose`。
 6. `stream === true` の場合はアクション単位で即座にffmpegを走らせ、生成順にNDJSONで返却する。
-7. `stream === false` の場合は、すべてのアクション音声とモーションを一つのタイムラインに並べ、1回のffmpeg実行で最終MP4 (`combined`) を生成する。
+7. `stream === false` の場合は、すべてのアクション音声とモーションを一つのタイムラインに並べ、1回のffmpeg実行で最終MP4を生成する（レスポンスは `outputPath` / `durationMs` などのメタ情報を直列で返す）。
 8. 失敗時はその地点で処理を停止し、レスポンスに失敗IDとエラー内容を含める。
 
 ### 6.4 レスポンス
 - `stream: false`（デフォルト）
   ```json
   {
-    "combined": {
-      "outputPath": ".../tmp/batch-123.mp4",
-      "durationMs": 3450
-    }
+    "outputPath": ".../tmp/batch-123.mp4",
+    "durationMs": 3450,
+    "motionIds": ["..."] // debug=true のときのみ
   }
   ```
-  - `stream=false` 時は VOICEVOX やサイレント音声を含む各アクションをタイムライン上に並べ、1回の `ffmpeg` 実行で `combined` を生成する。個別クリップは返さない。
+  - `stream=false` 時は VOICEVOX やサイレント音声を含む各アクションをタイムライン上に並べ、1回の `ffmpeg` 実行で最終MP4を生成する。レスポンスは最終ファイルのメタ情報のみを返す（`combined` オブジェクトは用意しない）。
 - `stream: true`
   - `Content-Type: application/x-ndjson`（予定）。各ジョブ完了で `{"type":"result","result":{...}}` を1行出力し、最後に `{"type":"done","count":3}` を送出。
   - エラー時は `{"type":"error","id":"2","message":"..."}`
@@ -204,11 +203,11 @@ animation-streamer/
   - emotionごとのプールを事前に構築し、ヒットしない場合は `neutral` → `その他` の順でフォールバック。
 - **MediaPipeline**
   - `synthesizeVoice(text, emotion)`：VOICEVOXエンドポイントへ `audio_query` → `synthesis` を行い、結果のWAVをtempDir内に保存。戻り値は `{ audioPath, durationMs }`。
-  - `compose(clips, audioPath | null, durationMs)`：`clips` から `concat` ファイルを生成し、必要数だけ `ffmpeg -stream_loop` or 事前コピーで並べる。音声が無い場合は `anullsrc` を入力に追加してAACトラックを生成。
-  - `renderToFile` は常に H.264 + AAC で `assets.tempDir` へ出力し、`GenerationService` へ相対/絶対パスを返す。
+  - `compose(clips, audioPath | null, durationMs)`：`clips` から `concat` ファイルを生成し、必要数だけ `ffmpeg -stream_loop` or 事前コピーで並べる。映像は `-c:v copy` で元素材のエンコード/解像度を維持し、音声が無い場合は `anullsrc` を入力に追加してAACトラックを生成。
+  - 合成ファイルはジョブディレクトリ内に MP4 で書き出し、`GenerationService` が `assets.tempDir` へ移動してクライアントへ絶対パスを返す。映像コーデックは素材準拠（`copy`）で、音声のみAACへ揃える。
   - 生成中の一時ファイルは `CleanupService` に登録しておき、成功/失敗に関わらず削除。
 - ストリーム配信用の `createIdleProcess` / `createSpeechProcess` も将来ここにまとめるが、現段階では `generate` 用 `compose` が中心。
-- ffmpeg呼び出しは `fluent-ffmpeg` か `child_process.spawn` のどちらでもよいが、`-f concat -safe 0 -i <list>` + `-i <audio>` + `-c:v libx264 -preset veryfast -c:a aac -shortest` を基本形とする。
+- ffmpeg呼び出しは `fluent-ffmpeg` か `child_process.spawn` のどちらでもよいが、`-f concat -safe 0 -i <list>` + `-i <audio>` + `-c:v copy -c:a aac -shortest` を基本形とする。
 
 ## 8. API 仕様 (初期)
 ### POST /api/start
@@ -234,7 +233,7 @@ animation-streamer/
 
 ### POST /api/generate
 - Body（例）: セクション6.1参照。
-- `stream: false`（デフォルト）の場合は `200 OK` + `{"combined": {...}}`。
+- `stream: false`（デフォルト）の場合は `200 OK` + `{ "outputPath": "...", "durationMs": 1234, ... }`。
 - `stream: true` の場合は `200 OK` + `Content-Type: application/x-ndjson`。1アクション完了ごとに
   ```
   {"type":"result","result":{"id":"1","action":"speak","outputPath":"/abs/tmp/clip-1.mp4","durationMs":2450}}
