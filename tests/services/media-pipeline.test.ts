@@ -22,11 +22,11 @@ describe('MediaPipeline audio helpers', () => {
   it('measures audio duration once and caches the result', async () => {
     runCommandWithOutputMock.mockResolvedValueOnce('1.23')
     const firstDuration = await mediaPipeline.getAudioDurationMs(fixturePath)
-    runCommandWithOutputMock.mockResolvedValueOnce('1.23')
     const secondDuration = await mediaPipeline.getAudioDurationMs(fixturePath)
 
     expect(firstDuration).toBeGreaterThan(0)
     expect(secondDuration).toBe(firstDuration)
+    expect(runCommandWithOutputMock).toHaveBeenCalledTimes(1)
     const cache = (mediaPipeline as unknown as { audioDurationCache: Map<string, number> }).audioDurationCache
     expect(cache.get(fixturePath)).toBe(firstDuration)
   })

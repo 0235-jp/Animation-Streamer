@@ -33,6 +33,8 @@ export class MediaPipeline {
   private readonly tempDir: string
   private readonly videoDurationCache = new Map<string, number>()
   private readonly audioDurationCache = new Map<string, number>()
+  private readonly videoDurationPromises = new Map<string, Promise<number>>()
+  private readonly audioDurationPromises = new Map<string, Promise<number>>()
 
   constructor(tempDir: string) {
     this.tempDir = tempDir
@@ -50,18 +52,46 @@ export class MediaPipeline {
 
   async getVideoDurationMs(videoPath: string): Promise<number> {
     const cached = this.videoDurationCache.get(videoPath)
-    if (cached) return cached
-    const duration = await this.runProbe(videoPath)
-    this.videoDurationCache.set(videoPath, duration)
-    return duration
+    if (cached !== undefined) return cached
+
+    const inFlight = this.videoDurationPromises.get(videoPath)
+    if (inFlight) return inFlight
+
+    const probePromise = this.runProbe(videoPath)
+      .then((duration) => {
+        this.videoDurationCache.set(videoPath, duration)
+        this.videoDurationPromises.delete(videoPath)
+        return duration
+      })
+      .catch((error) => {
+        this.videoDurationPromises.delete(videoPath)
+        throw error
+      })
+
+    this.videoDurationPromises.set(videoPath, probePromise)
+    return probePromise
   }
 
   async getAudioDurationMs(audioPath: string): Promise<number> {
     const cached = this.audioDurationCache.get(audioPath)
-    if (cached) return cached
-    const duration = await this.runProbe(audioPath)
-    this.audioDurationCache.set(audioPath, duration)
-    return duration
+    if (cached !== undefined) return cached
+
+    const inFlight = this.audioDurationPromises.get(audioPath)
+    if (inFlight) return inFlight
+
+    const probePromise = this.runProbe(audioPath)
+      .then((duration) => {
+        this.audioDurationCache.set(audioPath, duration)
+        this.audioDurationPromises.delete(audioPath)
+        return duration
+      })
+      .catch((error) => {
+        this.audioDurationPromises.delete(audioPath)
+        throw error
+      })
+
+    this.audioDurationPromises.set(audioPath, probePromise)
+    return probePromise
   }
 
   async compose(options: ComposeOptions): Promise<{ outputPath: string; durationMs: number }> {
@@ -91,7 +121,17 @@ export class MediaPipeline {
       )
     }
 
-    args.push('-c:v', 'copy', '-c:a', 'aac', '-ar', AUDIO_SAMPLE_RATE.toString(), '-shortest')
+    args.push(
+      '-c:v',
+      'copy',
+      '-c:a',
+      'aac',
+      '-ar',
+      AUDIO_SAMPLE_RATE.toString(),
+      '-ac',
+      AUDIO_CHANNEL_COUNT.toString(),
+      '-shortest'
+    )
     if (!options.audioPath) {
       args.push('-t', targetSeconds.toString())
     }
