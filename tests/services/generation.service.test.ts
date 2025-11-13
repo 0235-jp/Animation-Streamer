@@ -43,6 +43,7 @@ const createService = () => {
     createJobDir: vi.fn().mockResolvedValue('/tmp/job'),
     removeJobDir: vi.fn().mockResolvedValue(),
     normalizeAudio: vi.fn().mockResolvedValue('/tmp/normalized.wav'),
+    trimAudioSilence: vi.fn().mockResolvedValue('/tmp/trimmed.wav'),
     getAudioDurationMs: vi.fn().mockResolvedValue(1200),
     fitAudioDuration: vi.fn().mockResolvedValue('/tmp/fitted.wav'),
     createSilentAudio: vi.fn().mockResolvedValue('/tmp/silent.wav'),
@@ -156,6 +157,26 @@ describe('GenerationService', () => {
     expect(mediaPipeline.createSilentAudio).toHaveBeenNthCalledWith(1, 100, '/tmp/job')
     expect(mediaPipeline.createSilentAudio).toHaveBeenNthCalledWith(2, 100, '/tmp/job')
     expect(mediaPipeline.concatAudioFiles).toHaveBeenCalledWith(expect.any(Array), '/tmp/job')
+  })
+
+  it('trims normalized audio before measuring duration and fitting talk segments', async () => {
+    const { service, mediaPipeline } = createService()
+    const payload: GenerateRequestPayload = {
+      requests: [{ action: 'speak', params: { text: 'trim me' } }],
+    }
+
+    mediaPipeline.getAudioDurationMs.mockResolvedValueOnce(1100)
+
+    await service.processBatch(payload)
+
+    expect(mediaPipeline.trimAudioSilence).toHaveBeenCalledWith('/tmp/normalized.wav', '/tmp/job', expect.stringContaining('voice-1-trim'))
+    expect(mediaPipeline.getAudioDurationMs).toHaveBeenCalledWith('/tmp/trimmed.wav')
+    expect(mediaPipeline.fitAudioDuration).toHaveBeenCalledWith(
+      '/tmp/trimmed.wav',
+      expect.any(Number),
+      '/tmp/job',
+      expect.stringContaining('voice-1-fit')
+    )
   })
 
   it('wraps unexpected errors in streaming mode as ActionProcessingError(500)', async () => {

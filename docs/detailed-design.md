@@ -162,7 +162,7 @@ animation-streamer/
 ### 6.2 アクション種別
 - **speak**
   - 必須: `text`。`emotion` は任意（未指定時は `defaults.emotion` → `neutral`）。emotion指定があっても該当モーションが無い場合は `neutral` プールへフォールバックする。
-  - VOICEVOX で音声合成し、出来上がったWAVの長さ分だけ発話モーションを割り当てる。さらに `speechTransitions.enter/exit` が定義されている場合は、音声の前後にサイレントパディングを入れて `idle→talk` / `talk→idle` のブリッジ動画を自動挿入する。
+  - VOICEVOX で音声合成 → `MediaPipeline.normalizeAudio` で 48kHz ステレオ化 → `MediaPipeline.trimAudioSilence` で前後の無音を除去し、実際の発話部分だけを残す。この「トリミング済み音声」の尺を計測して発話モーションを割り当てる。`speechTransitions.enter/exit` が定義されている場合は、トリミング済み音声の前後にサイレントパディングを付与して `idle→talk` / `talk→idle` のブリッジ動画と同期させる。
   - `speechMotions` を emotion + type(Large/Small)でグループ化し、`animation-streamer-example` の `buildTimelinePlan` と同様に Largeで埋めて余りをSmallで補完。emotionに一致するモーションが無ければ `neutral` → その他任意順でフォールバック。
 - **idle**
   - 必須: `durationMs`。任意: `motionId`（明示指定時はそのモーションだけで構成）、`emotion`（待機モーションの感情タグでフィルタ）。
@@ -174,9 +174,10 @@ animation-streamer/
 1. `GenerationService` がリクエスト全体をバリデート。`requests` が空なら400。
 2. `requests` を順次処理。各アクションは `GenerationJobContext` に共有リソース（設定・tempDir・VOICEVOXクライアント）を持つ。
 3. `speak`:
-   1. `MediaPipeline.synthesizeVoice(text)` でWAV生成し、48kHzステレオへ正規化。
-   2. `ClipPlanner.selectSpeechClips(emotion, duration)` がモーションリストを返す。`speechTransitions.enter/exit` が設定されていれば、リストの先頭にidle→talk、末尾にtalk→idleのトランジションを差し込み、音声側は前後にサイレントパディングを入れて同期させる。
-   3. `MediaPipeline.compose(clips, audioPath, duration)` が concat用リストを作り、ffmpegで MP4 を出力。
+   1. `VoicevoxClient.synthesize(text)` でWAV生成。
+   2. `MediaPipeline.normalizeAudio` で 48kHz / stereo に揃えたあと、`MediaPipeline.trimAudioSilence` で前後無音を削除。トリミング済み音声を発話本体として保持し、このファイルの長さを `ClipPlanner` の入力に使う。
+   3. `ClipPlanner.selectSpeechClips(emotion, duration)` がモーションリストを返す。`speechTransitions.enter/exit` が設定されていれば、リストの先頭にidle→talk、末尾にtalk→idleのトランジションを差し込み、音声側は前後にサイレントパディングを入れて同期させる。
+   4. `MediaPipeline.compose(clips, audioPath, duration)` が concat用リストを作り、ffmpegで MP4 を出力（音声はトリミング済み＋パディング済みのものを利用）。
 4. `idle`: `ClipPlanner.selectIdleClips(duration, emotion)` → `MediaPipeline.compose(clips, null, duration)`。
 5. 任意アクション: `actions` から動画パスを取得し単体で `compose`。
 6. `stream === true` の場合はアクション単位で即座にffmpegを走らせ、生成順にNDJSONで返却する。
@@ -202,8 +203,10 @@ animation-streamer/
   - `selectSpeechClips(emotion, duration)` と `selectIdleClips(duration)` を提供。`animation-streamer-example/src/lib/timeline.ts` の Large/Small選択ロジックをサーバーサイドへ移植し、durationをカバーするまでランダムにLargeを優先・余剰をSmallで補完する。
   - emotionごとのプールを事前に構築し、ヒットしない場合は `neutral` → `その他` の順でフォールバック。
 - **MediaPipeline**
-  - `synthesizeVoice(text, emotion)`：VOICEVOXエンドポイントへ `audio_query` → `synthesis` を行い、結果のWAVをtempDir内に保存。戻り値は `{ audioPath, durationMs }`。
-  - `compose(clips, audioPath | null, durationMs)`：`clips` から `concat` ファイルを生成し、必要数だけ `ffmpeg -stream_loop` or 事前コピーで並べる。映像は `-c:v copy` で元素材のエンコード/解像度を維持し、音声が無い場合は `anullsrc` を入力に追加してAACトラックを生成。
+  - VOICEVOX呼び出しは `VoicevoxClient` が担い、`MediaPipeline` は受け取ったWAVを正規化・加工する役割に専念する。
+  - `normalizeAudio(input)`：48kHz / stereo / `pcm_s16le` へ変換し、以降の処理を同一フォーマットに統一。
+  - `trimAudioSilence(input, {levelDb})`：`silenceremove → areverse → silenceremove → areverse` の2段構成で、先頭・末尾の無音を独立して削除する。デフォルトでは -70dB 未満を無音とみなし、発話中のポーズは残る。戻り値はトリミング済みファイルパス。
+  - `compose(clips, audioPath | null, durationMs)`：`clips` から `concat` ファイルを生成し、必要数だけ `ffmpeg -stream_loop` or 事前コピーで並べる。映像は `-c:v copy` で元素材のエンコード/解像度を維持し、音声が無い場合は `anullsrc` を入力に追加してAACトラックを生成。音声がある場合は、トリミング済み音声（＋必要なサイレントパディング）を入力に使う。
   - 合成ファイルはジョブディレクトリ内に MP4 で書き出し、`GenerationService` が `assets.tempDir` へ移動してクライアントへ絶対パスを返す。映像コーデックは素材準拠（`copy`）で、音声のみAACへ揃える。
   - 生成中の一時ファイルは `CleanupService` に登録しておき、成功/失敗に関わらず削除。
 - ストリーム配信用の `createIdleProcess` / `createSpeechProcess` も将来ここにまとめるが、現段階では `generate` 用 `compose` が中心。

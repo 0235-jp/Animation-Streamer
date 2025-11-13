@@ -346,12 +346,21 @@ export class GenerationService {
     const audioPath = path.join(jobDir, `voice-${requestId}.wav`)
     await this.voicevox.synthesize(text, audioPath)
     const normalizedAudio = await this.mediaPipeline.normalizeAudio(audioPath, jobDir, `voice-${requestId}`)
-    const audioDuration = await this.mediaPipeline.getAudioDurationMs(normalizedAudio)
+    const trimmedAudio = await this.mediaPipeline.trimAudioSilence(normalizedAudio, jobDir, `voice-${requestId}-trim`)
+    const trimmedDuration = await this.mediaPipeline.getAudioDurationMs(trimmedAudio)
+    const useTrimmedAudio = trimmedDuration > 0
+    if (!useTrimmedAudio) {
+      logger.warn({ requestId }, 'Trimmed audio is empty, falling back to normalized audio')
+    }
+    const effectiveAudioPath = useTrimmedAudio ? trimmedAudio : normalizedAudio
+    const audioDuration = useTrimmedAudio
+      ? trimmedDuration
+      : await this.mediaPipeline.getAudioDurationMs(normalizedAudio)
     const plan = await this.clipPlanner.buildSpeechPlan(emotion, audioDuration)
     const durationMs = plan.totalDurationMs
     const talkDuration = plan.talkDurationMs ?? durationMs
     const fittedAudio = await this.mediaPipeline.fitAudioDuration(
-      normalizedAudio,
+      effectiveAudioPath,
       talkDuration,
       jobDir,
       `voice-${requestId}-fit`
