@@ -10,12 +10,23 @@ const videoFixture = path.resolve(process.cwd(), 'tests/fixtures/video/video-tes
 
 describe('MediaPipeline compose integration', () => {
   let pipeline: MediaPipeline
+  let hasFfmpeg = false
 
-  beforeAll(() => {
+  beforeAll(async () => {
     pipeline = new MediaPipeline(tempDir)
+    try {
+      await execFileAsync('ffmpeg', ['-version'])
+      hasFfmpeg = true
+    } catch {
+      hasFfmpeg = false
+    }
   })
 
   it('replaces embedded motion audio with the provided track', async () => {
+    if (!hasFfmpeg) {
+      console.warn('Skipping MediaPipeline compose integration test because ffmpeg is not available')
+      return
+    }
     const jobDir = await pipeline.createJobDir()
     try {
       const silentAudio = await pipeline.createSilentAudio(1000, jobDir)
