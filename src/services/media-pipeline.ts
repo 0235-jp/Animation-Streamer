@@ -123,6 +123,11 @@ export class MediaPipeline {
     }
 
     args.push(
+      // Always drop audio streams coming from motion clips so TTS/silent audio is the sole source.
+      '-map',
+      '0:v:0',
+      '-map',
+      '1:a:0',
       '-c:v',
       'copy',
       '-c:a',

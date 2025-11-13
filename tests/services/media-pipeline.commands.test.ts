@@ -42,6 +42,9 @@ describe('MediaPipeline command building', () => {
     expect(args).toContain('-f')
     expect(args).toContain('concat')
     expect(args).toContain(`anullsrc=channel_layout=stereo:sample_rate=48000`)
+    expect(args).toContain('-map')
+    expect(args).toContain('0:v:0')
+    expect(args).toContain('1:a:0')
   })
 
   it('passes audio input when audioPath is provided to compose', async () => {
@@ -55,6 +58,9 @@ describe('MediaPipeline command building', () => {
     const args = runCommandMock.mock.calls.at(-1)?.[1] ?? []
     expect(args).toContain('/tmp/audio.wav')
     expect(args.filter((token) => token === '-i')).toHaveLength(2)
+    expect(args).toContain('-map')
+    expect(args).toContain('0:v:0')
+    expect(args).toContain('1:a:0')
   })
 
   it('returns cached duration when concatenating a single audio file', async () => {
