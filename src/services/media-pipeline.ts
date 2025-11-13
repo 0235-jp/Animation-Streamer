@@ -318,9 +318,8 @@ export class MediaPipeline {
     const outputPath = path.join(dir, `${prefix}-${randomUUID()}.wav`)
     const threshold = options?.silenceThresholdDb ?? DEFAULT_SILENCE_THRESHOLD_DB
     const thresholdArg = `${threshold}dB`
-    const removeLead = ['silenceremove=start_periods=1', `start_threshold=${thresholdArg}`].join(':')
-    const removeTrail = ['silenceremove=start_periods=1', `start_threshold=${thresholdArg}`].join(':')
-    const filter = [removeLead, 'areverse', removeTrail, 'areverse'].join(',')
+    const silenceFilter = ['silenceremove=start_periods=1', `start_threshold=${thresholdArg}`].join(':')
+    const filter = [silenceFilter, 'areverse', silenceFilter, 'areverse'].join(',')
 
     await runCommand('ffmpeg', [
       '-y',
