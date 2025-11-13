@@ -1,7 +1,8 @@
+import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { MediaPipeline } from '../../src/services/media-pipeline'
 
 const execFileAsync = promisify(execFile)
@@ -13,6 +14,8 @@ describe('MediaPipeline compose integration', () => {
   let hasFfmpeg = false
 
   beforeAll(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true })
+    await fs.mkdir(tempDir, { recursive: true })
     pipeline = new MediaPipeline(tempDir)
     try {
       await execFileAsync('ffmpeg', ['-version'])
@@ -20,6 +23,10 @@ describe('MediaPipeline compose integration', () => {
     } catch {
       hasFfmpeg = false
     }
+  })
+
+  afterAll(async () => {
+    await fs.rm(tempDir, { recursive: true, force: true })
   })
 
   it('replaces embedded motion audio with the provided track', async () => {
