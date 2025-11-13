@@ -123,6 +123,11 @@ export class MediaPipeline {
     }
 
     args.push(
+      // モーションクリップ由来の音声ストリームは常に破棄し、TTS/無音音声を唯一の音源として多重化する。
+      '-map',
+      '0:v:0',
+      '-map',
+      '1:a:0',
       '-c:v',
       'copy',
       '-c:a',
