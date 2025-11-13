@@ -179,7 +179,7 @@ animation-streamer/
    3. `ClipPlanner.selectSpeechClips(emotion, duration)` がモーションリストを返す。`speechTransitions.enter/exit` が設定されていれば、リストの先頭にidle→talk、末尾にtalk→idleのトランジションを差し込み、音声側は前後にサイレントパディングを入れて同期させる。
    4. `MediaPipeline.compose(clips, audioPath, duration)` が concat用リストを作り、ffmpegで MP4 を出力（音声はトリミング済み＋パディング済みのものを利用）。
 4. `idle`: `ClipPlanner.selectIdleClips(duration, emotion)` → `MediaPipeline.compose(clips, null, duration)`。
-5. 任意アクション: `actions` から動画パスを取得し単体で `compose`。
+5. 任意アクション: `actions` から動画パスを取得し単体で `compose`。このとき `planCustomAction` が動画に含まれる音声トラックを `MediaPipeline.extractAudioTrack` → `fitAudioDuration` で整形し、存在しない場合のみ `createSilentAudio` を使う。よってアクション独自の効果音やBGMはモーションと一緒に再生される。
 6. `stream === true` の場合はアクション単位で即座にffmpegを走らせ、生成順にNDJSONで返却する。
 7. `stream === false` の場合は、すべてのアクション音声とモーションを一つのタイムラインに並べ、1回のffmpeg実行で最終MP4を生成する（レスポンスは `outputPath` / `durationMs` などのメタ情報を直列で返す）。
 8. 失敗時はその地点で処理を停止し、レスポンスに失敗IDとエラー内容を含める。
@@ -206,7 +206,8 @@ animation-streamer/
   - VOICEVOX呼び出しは `VoicevoxClient` が担い、`MediaPipeline` は受け取ったWAVを正規化・加工する役割に専念する。
   - `normalizeAudio(input)`：48kHz / stereo / `pcm_s16le` へ変換し、以降の処理を同一フォーマットに統一。
   - `trimAudioSilence(input, {levelDb})`：`silenceremove → areverse → silenceremove → areverse` の2段構成で、先頭・末尾の無音を独立して削除する。デフォルトでは -70dB 未満を無音とみなし、発話中のポーズは残る。戻り値はトリミング済みファイルパス。
-  - `compose(clips, audioPath | null, durationMs)`：`clips` から `concat` ファイルを生成し、必要数だけ `ffmpeg -stream_loop` or 事前コピーで並べる。映像は `-c:v copy` で元素材のエンコード/解像度を維持し、音声が無い場合は `anullsrc` を入力に追加してAACトラックを生成。音声がある場合は、トリミング済み音声（＋必要なサイレントパディング）を入力に使う。
+  - `compose(clips, audioPath | null, durationMs)`：`clips` から `concat` ファイルを生成し、必要数だけ `ffmpeg -stream_loop` or 事前コピーで並べる。映像は `-c:v copy` で元素材のエンコード/解像度を維持し、音声が無い場合は `anullsrc` を入力に追加してAACトラックを生成。音声がある場合は、トリミング済み音声（＋必要なサイレントパディング、またはアクション動画から抽出したBGM）を入力に使う。
+    - モーション動画に残っている音声ストリームは `-map 0:v:0 -map 1:a:0` で強制的に破棄し、`compose` に渡した音声入力（VOICEVOX / 無音WAV / アクション用に抽出した音声）のみを最終MP4へ多重化する。したがって `speechMotions` / `idleMotions` / `speechTransitions` に音声トラックが残っていても出力へ混入しない一方、カスタムアクションは事前に抽出した音声がそのまま利用される。
   - 合成ファイルはジョブディレクトリ内に MP4 で書き出し、`GenerationService` が `assets.tempDir` へ移動してクライアントへ絶対パスを返す。映像コーデックは素材準拠（`copy`）で、音声のみAACへ揃える。
   - 生成中の一時ファイルは `CleanupService` に登録しておき、成功/失敗に関わらず削除。
 - ストリーム配信用の `createIdleProcess` / `createSpeechProcess` も将来ここにまとめるが、現段階では `generate` 用 `compose` が中心。

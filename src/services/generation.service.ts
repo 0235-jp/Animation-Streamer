@@ -260,11 +260,12 @@ export class GenerationService {
     requestId: string,
     includeDebug: boolean
   ): Promise<ActionResult> {
-    const [plan] = await this.buildCustomActionPlanData(item, requestId)
     const jobDir = await this.mediaPipeline.createJobDir()
     try {
+      const plan = await this.planCustomAction(item, jobDir, requestId)
       const { outputPath, durationMs } = await this.mediaPipeline.compose({
         clips: plan.clips,
+        audioPath: plan.audioPath,
         durationMs: plan.durationMs,
         jobDir,
       })
