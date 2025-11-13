@@ -21,6 +21,7 @@ const toSeconds = (ms: number) => (Math.max(ms, 0) / 1000).toFixed(3)
 const AUDIO_SAMPLE_RATE = 48_000
 const AUDIO_CHANNEL_LAYOUT = 'stereo'
 const AUDIO_CHANNEL_COUNT = 2
+const DEFAULT_SILENCE_THRESHOLD_DB = -70
 
 export class NoAudioTrackError extends Error {
   constructor(public readonly sourcePath: string) {
@@ -296,6 +297,40 @@ export class MediaPipeline {
       'error',
       '-i',
       inputPath,
+      '-ac',
+      AUDIO_CHANNEL_COUNT.toString(),
+      '-ar',
+      AUDIO_SAMPLE_RATE.toString(),
+      '-c:a',
+      'pcm_s16le',
+      outputPath,
+    ])
+    return outputPath
+  }
+
+  async trimAudioSilence(
+    inputPath: string,
+    jobDir?: string,
+    prefix = 'audio-trim',
+    options?: { silenceThresholdDb?: number }
+  ): Promise<string> {
+    const dir = jobDir ?? (await this.createJobDir())
+    const outputPath = path.join(dir, `${prefix}-${randomUUID()}.wav`)
+    const threshold = options?.silenceThresholdDb ?? DEFAULT_SILENCE_THRESHOLD_DB
+    const thresholdArg = `${threshold}dB`
+    const removeLead = ['silenceremove=start_periods=1', `start_threshold=${thresholdArg}`].join(':')
+    const removeTrail = ['silenceremove=start_periods=1', `start_threshold=${thresholdArg}`].join(':')
+    const filter = [removeLead, 'areverse', removeTrail, 'areverse'].join(',')
+
+    await runCommand('ffmpeg', [
+      '-y',
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-i',
+      inputPath,
+      '-af',
+      filter,
       '-ac',
       AUDIO_CHANNEL_COUNT.toString(),
       '-ar',

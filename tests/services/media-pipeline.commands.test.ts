@@ -94,6 +94,18 @@ describe('MediaPipeline command building', () => {
     expect(args).toContain('pcm_s16le')
   })
 
+  it('trims audio silence using silenceremove filter with defaults', async () => {
+    const pipeline = new MediaPipeline(tempDir)
+    await pipeline.trimAudioSilence('/tmp/in.wav')
+    const args = runCommandMock.mock.calls.at(-1)?.[1] ?? []
+    expect(args).toContain('/tmp/in.wav')
+    const filterIndex = args.indexOf('-af')
+    expect(filterIndex).toBeGreaterThan(-1)
+    const filterArg = args[filterIndex + 1]
+    expect(filterArg).toContain(',areverse,')
+    expect(filterArg).toContain('silenceremove=start_periods=1:start_threshold=-70dB')
+  })
+
   it('fits audio duration by padding and truncating to requested length', async () => {
     const pipeline = new MediaPipeline(tempDir)
     await pipeline.fitAudioDuration('/tmp/in.wav', 2500)
