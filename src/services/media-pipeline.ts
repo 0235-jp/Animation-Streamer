@@ -123,7 +123,7 @@ export class MediaPipeline {
     }
 
     args.push(
-      // Always drop audio streams coming from motion clips so TTS/silent audio is the sole source.
+      // モーションクリップ由来の音声ストリームは常に破棄し、TTS/無音音声を唯一の音源として多重化する。
       '-map',
       '0:v:0',
       '-map',
