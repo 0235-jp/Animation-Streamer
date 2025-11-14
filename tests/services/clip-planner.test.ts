@@ -85,6 +85,13 @@ describe('ClipPlanner timeline generation', () => {
     expect(plan.totalDurationMs).toBeGreaterThanOrEqual(2500 - 100)
   })
 
+  it('always returns at least one clip for extremely short durations', async () => {
+    const plan = await clipPlanner.buildIdlePlan(character.id, 1)
+
+    expect(plan.clips).toHaveLength(1)
+    expect(plan.totalDurationMs).toBeGreaterThan(0)
+  })
+
   it('builds action clip timelines using the original video duration', async () => {
     const action = character.actions[0]
     const plan = await clipPlanner.buildActionClip(action)

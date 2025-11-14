@@ -258,6 +258,20 @@ export class ClipPlanner {
       covered += candidate.durationMs
     }
 
+    // targetDurationMs が極端に短い場合、while ループを一度も通らずにここまで到達しうる。
+    if (!plan.length) {
+      const fallback =
+        this.pickAnyCandidate(smallCandidates) ?? this.pickAnyCandidate(largeCandidates)
+      if (fallback) {
+        plan.push({
+          id: fallback.motion.id,
+          path: fallback.motion.absolutePath,
+          durationMs: fallback.durationMs,
+        })
+        covered += fallback.durationMs
+      }
+    }
+
     return {
       clips: plan,
       totalDurationMs: covered,
