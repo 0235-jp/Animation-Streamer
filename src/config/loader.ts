@@ -154,18 +154,7 @@ export const loadConfig = async (configPath: string): Promise<ResolvedConfig> =>
     outputStereo: parsed.audioProfile.outputStereo,
   })
 
-  const voices = (parsed.audioProfile.voices ?? []).map((voice) =>
-    normalizeVoice({
-      emotion: voice.emotion,
-      speakerId: voice.speakerId,
-      speedScale: voice.speedScale,
-      pitchScale: voice.pitchScale,
-      intonationScale: voice.intonationScale,
-      volumeScale: voice.volumeScale,
-      outputSamplingRate: voice.outputSamplingRate,
-      outputStereo: voice.outputStereo,
-    })
-  )
+  const voices = (parsed.audioProfile.voices ?? []).map(normalizeVoice)
 
   const absoluteTempDir = path.resolve(baseDir, parsed.assets.tempDir)
   await fs.mkdir(absoluteTempDir, { recursive: true })
