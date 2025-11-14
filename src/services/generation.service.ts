@@ -1,10 +1,10 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { ResolvedAction, ResolvedConfig } from '../config/loader'
+import { ResolvedAction, ResolvedConfig, type VoicevoxVoiceProfile } from '../config/loader'
 import { ClipPlanner } from './clip-planner'
 import { MediaPipeline, type ClipSource, NoAudioTrackError } from './media-pipeline'
-import { VoicevoxClient } from './voicevox'
+import { VoicevoxClient, type VoicevoxVoiceOptions } from './voicevox'
 import type { ActionResult, GenerateDefaults, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler } from '../types/generate'
 import { logger } from '../utils/logger'
 
@@ -345,7 +345,8 @@ export class GenerationService {
     const emotion = this.ensureOptionalString(params.emotion) ?? defaults.emotion ?? 'neutral'
 
     const audioPath = path.join(jobDir, `voice-${requestId}.wav`)
-    await this.voicevox.synthesize(text, audioPath)
+    const voiceProfile = this.resolveVoiceProfile(emotion)
+    await this.voicevox.synthesize(text, audioPath, voiceProfile)
     const normalizedAudio = await this.mediaPipeline.normalizeAudio(audioPath, jobDir, `voice-${requestId}`)
     const trimmedAudio = await this.mediaPipeline.trimAudioSilence(normalizedAudio, jobDir, `voice-${requestId}-trim`)
     const trimmedDuration = await this.mediaPipeline.getAudioDurationMs(trimmedAudio)
@@ -446,6 +447,24 @@ export class GenerationService {
       ...plan,
       audioPath,
     }
+  }
+
+  private resolveVoiceProfile(emotion: string | undefined): VoicevoxVoiceOptions {
+    const normalizedEmotion = (emotion ?? 'neutral').trim().toLowerCase()
+    let matchingVoice: VoicevoxVoiceProfile | undefined
+    let neutralVoice: VoicevoxVoiceProfile | undefined
+
+    for (const voice of this.config.audioProfile.voices) {
+      if (voice.emotion === normalizedEmotion) {
+        matchingVoice = voice
+        break
+      }
+      if (!neutralVoice && voice.emotion === 'neutral') {
+        neutralVoice = voice
+      }
+    }
+
+    return matchingVoice ?? neutralVoice ?? this.config.audioProfile.defaultVoice
   }
 
   private async buildIdlePlanData(

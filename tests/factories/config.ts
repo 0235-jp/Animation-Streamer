@@ -84,7 +84,28 @@ const baseConfig: ResolvedConfig = {
   audioProfile: {
     ttsEngine: 'voicevox',
     voicevoxUrl: 'http://127.0.0.1:50021',
-    speakerId: 1,
+    defaultVoice: {
+      emotion: 'neutral',
+      speakerId: 1,
+      speedScale: 1,
+      pitchScale: 0,
+      intonationScale: 1,
+      volumeScale: 1,
+      outputSamplingRate: 24000,
+      outputStereo: false,
+    },
+    voices: [
+      {
+        emotion: 'neutral',
+        speakerId: 1,
+        speedScale: 1.05,
+      },
+      {
+        emotion: 'happy',
+        speakerId: 2,
+        pitchScale: 0.2,
+      },
+    ],
   },
   assets: {
     tempDir: './tmp',
@@ -111,7 +132,11 @@ const cloneConfig = (): ResolvedConfig => ({
       ? baseConfig.speechTransitions.exit.map((motion) => ({ ...motion }))
       : undefined,
   },
-  audioProfile: { ...baseConfig.audioProfile },
+  audioProfile: {
+    ...baseConfig.audioProfile,
+    defaultVoice: { ...baseConfig.audioProfile.defaultVoice },
+    voices: baseConfig.audioProfile.voices.map((voice) => ({ ...voice })),
+  },
   assets: { ...baseConfig.assets },
 })
 

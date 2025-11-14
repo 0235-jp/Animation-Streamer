@@ -76,7 +76,19 @@ animation-streamer/
   "audioProfile": {
     "ttsEngine": "voicevox",
     "voicevoxUrl": "http://127.0.0.1:50021",
-    "speakerId": 1
+    "speakerId": 1,
+    "voices": [
+      {
+        "emotion": "neutral",
+        "speakerId": 1,
+        "speedScale": 1.1
+      },
+      {
+        "emotion": "happy",
+        "speakerId": 3,
+        "pitchScale": 0.3
+      }
+    ]
   },
   "assets": { "tempDir": "./tmp" }
 }
@@ -85,7 +97,7 @@ animation-streamer/
 - `idleMotions` は待機モーションのプール。`speechMotions` は `large` / `small` ごとに配列を分け、感情ごとにモーションセットを切り替えられる。
 - `speechTransitions` を設定すると、`speak` アクションの先頭に `enter`（例: idle→talk）、末尾に `exit`（例: talk→idle）を自動挿入する。遷移にも `emotion` を設定でき、`speechMotions` と同様に「一致したemotion → neutral → その他」の優先順位で選択される。
 - `path` はffmpegが読めるローカルパス。
-- `audioProfile` は唯一のTTS設定として VOICEVOX のURLやspeakerIdを含む。
+- `audioProfile` は唯一のTTS設定として VOICEVOX のURLやspeakerIdに加え、`speedScale`/`pitchScale`/`intonationScale`/`volumeScale` や `outputSamplingRate`・`outputStereo` などの合成パラメータを任意で含む。`voices` 配列を指定すると、感情（`emotion`）ごとに話者 ID や調整値を切り替えられ、モーション選択と同じ優先順位で `requests[].params.emotion` に応じた TTS プロファイルが選択される。
 
 ## 3. 状態管理
 - `interface StreamState { sessionId: string; phase: 'IDLE'|'WAITING'|'SPEECH'|'STOPPED'; activeMotionId?: string; queueLength: number; }

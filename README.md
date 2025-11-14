@@ -63,5 +63,7 @@ curl -X POST http://localhost:4000/api/generate \
 - audioProfile: TTS 用の接続情報をまとめたプロファイルで、現在は VOICEVOX のみサポートします。
   - ttsEngine: 使用する音声合成エンジン名で、`voicevox` 固定です。
   - voicevoxUrl: ローカルの VOICEVOX エンジン API エンドポイント URL です。
-  - speakerId: VOICEVOX の話者 ID で、キャラクターの声色を切り替えられます。
+  - speakerId: VOICEVOX の話者 ID。ここで指定した値が「neutral」フォールバックとして利用されます。
+  - speedScale / pitchScale / intonationScale / volumeScale / outputSamplingRate / outputStereo (すべて任意): 省略時は VOICEVOX 側のデフォルトを使用します。
+  - voices (任意): 感情ごとに TTS パラメータを上書きする配列。`emotion`・`speakerId` と任意の調整値を指定し、`requests[].params.emotion` が一致した場合にモーションと同じ優先順位（指定感情 → neutral → フォールバック）で選択されます。
 - assets.tempDir: 生成処理中の一時的な音声・動画を配置するディレクトリで、起動時に自動作成されます。

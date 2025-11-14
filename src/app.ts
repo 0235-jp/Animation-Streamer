@@ -20,7 +20,6 @@ export const createApp = async (options: CreateAppOptions = {}) => {
   const clipPlanner = new ClipPlanner(mediaPipeline, config.speechMotions, config.idleMotions, config.speechTransitions)
   const voicevox = new VoicevoxClient({
     endpoint: config.audioProfile.voicevoxUrl,
-    speakerId: config.audioProfile.speakerId,
   })
   const generationService = new GenerationService({
     config,

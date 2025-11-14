@@ -79,7 +79,20 @@
   "audioProfile": {
     "ttsEngine": "voicevox",
     "voicevoxUrl": "http://127.0.0.1:50021",
-    "speakerId": 1
+    "speakerId": 1,
+    "voices": [
+      {
+        "emotion": "neutral",
+        "speakerId": 1,
+        "speedScale": 1.1
+      },
+      {
+        "emotion": "happy",
+        "speakerId": 3,
+        "pitchScale": 0.3,
+        "intonationScale": 1.2
+      }
+    ]
   },
   "assets": {
     "tempDir": "./tmp"
