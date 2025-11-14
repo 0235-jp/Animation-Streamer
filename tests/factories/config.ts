@@ -85,6 +85,12 @@ const baseConfig: ResolvedConfig = {
     ttsEngine: 'voicevox',
     voicevoxUrl: 'http://127.0.0.1:50021',
     speakerId: 1,
+    speedScale: 1,
+    pitchScale: 0,
+    intonationScale: 1,
+    volumeScale: 1,
+    outputSamplingRate: 24000,
+    outputStereo: false,
   },
   assets: {
     tempDir: './tmp',

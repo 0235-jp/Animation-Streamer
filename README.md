@@ -64,4 +64,10 @@ curl -X POST http://localhost:4000/api/generate \
   - ttsEngine: 使用する音声合成エンジン名で、`voicevox` 固定です。
   - voicevoxUrl: ローカルの VOICEVOX エンジン API エンドポイント URL です。
   - speakerId: VOICEVOX の話者 ID で、キャラクターの声色を切り替えられます。
+  - speedScale (任意): 話速の倍率。省略すると VOICEVOX デフォルト (約 1.0) が使われます。
+  - pitchScale (任意): ピッチのオフセット値。省略時はエンジン標準 (0.0)。
+  - intonationScale (任意): 抑揚の強弱を決める倍率。省略時は標準値 (1.0)。
+  - volumeScale (任意): 出力音量の倍率。省略時は標準 (1.0)。
+  - outputSamplingRate (任意): サンプリングレート (Hz)。省略時は 24000。
+  - outputStereo (任意): true でステレオ。省略時/false でモノラル。
 - assets.tempDir: 生成処理中の一時的な音声・動画を配置するディレクトリで、起動時に自動作成されます。

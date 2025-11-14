@@ -75,4 +75,75 @@ describe('VoicevoxClient', () => {
 
     expect(fs.writeFile).toHaveBeenCalledWith('/tmp/out.wav', expect.any(Buffer))
   })
+
+  it('keeps VOICEVOX-provided defaults when overrides are omitted', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createResponse({
+          json: {
+            accent_phrases: [],
+            speedScale: 0.75,
+            pitchScale: 0.1,
+            intonationScale: 1.2,
+            volumeScale: 0.8,
+            outputSamplingRate: 44100,
+            outputStereo: true,
+          },
+        })
+      )
+      .mockResolvedValueOnce(createResponse({ arrayBuffer: new ArrayBuffer(4) }))
+
+    const client = new VoicevoxClient({ endpoint: 'http://localhost:50021', speakerId: 5 })
+
+    await client.synthesize('テスト', '/tmp/out.wav')
+
+    const synthesizedPayload = JSON.parse((fetchMock.mock.calls[1]?.[1]?.body as string) ?? '{}')
+    expect(synthesizedPayload).toMatchObject({
+      speedScale: 0.75,
+      pitchScale: 0.1,
+      intonationScale: 1.2,
+      volumeScale: 0.8,
+      outputSamplingRate: 44100,
+      outputStereo: true,
+    })
+  })
+
+  it('applies config-provided synthesis parameters to the audio query', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        createResponse({
+          json: {
+            accent_phrases: [],
+            speedScale: 0.5,
+            pitchScale: 0.2,
+          },
+        })
+      )
+      .mockResolvedValueOnce(createResponse({ arrayBuffer: new ArrayBuffer(4) }))
+
+    const client = new VoicevoxClient({
+      endpoint: 'http://localhost:50021',
+      speakerId: 7,
+      speedScale: 1.5,
+      pitchScale: -0.3,
+      intonationScale: 0.8,
+      volumeScale: 0.4,
+      outputSamplingRate: 44100,
+      outputStereo: true,
+    })
+
+    await client.synthesize('テスト', '/tmp/out.wav')
+
+    const synthCall = fetchMock.mock.calls[1]
+    expect(synthCall[0]).toBe('http://localhost:50021/synthesis?speaker=7')
+    const synthesizedPayload = JSON.parse((synthCall[1]?.body as string) ?? '{}')
+    expect(synthesizedPayload).toMatchObject({
+      speedScale: 1.5,
+      pitchScale: -0.3,
+      intonationScale: 0.8,
+      volumeScale: 0.4,
+      outputSamplingRate: 44100,
+      outputStereo: true,
+    })
+  })
 })

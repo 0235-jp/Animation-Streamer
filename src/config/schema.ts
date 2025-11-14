@@ -29,6 +29,12 @@ export const audioProfileSchema = z.object({
   ttsEngine: z.literal('voicevox'),
   voicevoxUrl: z.string().min(1),
   speakerId: z.number().int().nonnegative().default(1),
+  speedScale: z.number().positive().optional(),
+  pitchScale: z.number().optional(),
+  intonationScale: z.number().nonnegative().optional(),
+  volumeScale: z.number().nonnegative().optional(),
+  outputSamplingRate: z.number().int().positive().optional(),
+  outputStereo: z.boolean().optional(),
 })
 
 export const configSchema = z.object({

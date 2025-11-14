@@ -21,6 +21,12 @@ export const createApp = async (options: CreateAppOptions = {}) => {
   const voicevox = new VoicevoxClient({
     endpoint: config.audioProfile.voicevoxUrl,
     speakerId: config.audioProfile.speakerId,
+    speedScale: config.audioProfile.speedScale,
+    pitchScale: config.audioProfile.pitchScale,
+    intonationScale: config.audioProfile.intonationScale,
+    volumeScale: config.audioProfile.volumeScale,
+    outputSamplingRate: config.audioProfile.outputSamplingRate,
+    outputStereo: config.audioProfile.outputStereo,
   })
   const generationService = new GenerationService({
     config,

@@ -85,7 +85,7 @@ animation-streamer/
 - `idleMotions` は待機モーションのプール。`speechMotions` は `large` / `small` ごとに配列を分け、感情ごとにモーションセットを切り替えられる。
 - `speechTransitions` を設定すると、`speak` アクションの先頭に `enter`（例: idle→talk）、末尾に `exit`（例: talk→idle）を自動挿入する。遷移にも `emotion` を設定でき、`speechMotions` と同様に「一致したemotion → neutral → その他」の優先順位で選択される。
 - `path` はffmpegが読めるローカルパス。
-- `audioProfile` は唯一のTTS設定として VOICEVOX のURLやspeakerIdを含む。
+- `audioProfile` は唯一のTTS設定として VOICEVOX のURLやspeakerIdに加え、`speedScale`/`pitchScale`/`intonationScale`/`volumeScale` や `outputSamplingRate`・`outputStereo` などの合成パラメータを任意で含む（未指定時は VOICEVOX のデフォルト値が利用される）。
 
 ## 3. 状態管理
 - `interface StreamState { sessionId: string; phase: 'IDLE'|'WAITING'|'SPEECH'|'STOPPED'; activeMotionId?: string; queueLength: number; }
