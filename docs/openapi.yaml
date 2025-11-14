@@ -20,6 +20,7 @@ paths:
           source: |-
             curl -X POST http://localhost:4000/api/generate \
               -H 'Content-Type: application/json' \
+              -H 'X-API-Key: <your-api-key>' \
               -d '{
                 "stream": false,
                 "debug": true,
@@ -79,7 +80,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+      security:
+        - ApiKeyAuth: []
 components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API キーを設定している場合にのみ必須です。
   schemas:
     GenerateRequest:
       type: object

@@ -30,7 +30,7 @@ export const createApp = async (options: CreateAppOptions = {}) => {
 
   const app = express()
   app.use(express.json({ limit: '2mb' }))
-  app.use('/api', createGenerationRouter(generationService))
+  app.use('/api', createGenerationRouter(generationService, { apiKey: config.server.apiKey }))
   app.use('/docs', createDocsRouter())
   app.get('/health', (_req, res) => res.json({ status: 'ok' }))
 

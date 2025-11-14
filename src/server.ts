@@ -5,8 +5,9 @@ const start = async () => {
   try {
     const { app, config } = await createApp()
     const port = Number(process.env.PORT ?? config.server.port ?? 4000)
-    app.listen(port, () => {
-      logger.info({ port }, 'Server started')
+    const host = process.env.HOST ?? config.server.host ?? 'localhost'
+    app.listen(port, host, () => {
+      logger.info({ port, host }, 'Server started')
     })
   } catch (error) {
     logger.error({ err: error }, 'Failed to start server')

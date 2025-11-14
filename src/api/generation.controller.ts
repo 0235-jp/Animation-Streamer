@@ -7,8 +7,26 @@ import { logger } from '../utils/logger'
 
 const toNdjson = (payload: unknown) => `${JSON.stringify(payload)}\n`
 
-export const createGenerationRouter = (generationService: GenerationService): Router => {
+export interface GenerationRouterOptions {
+  apiKey?: string
+}
+
+export const createGenerationRouter = (
+  generationService: GenerationService,
+  options: GenerationRouterOptions = {}
+): Router => {
   const router = Router()
+  const { apiKey } = options
+
+  if (apiKey) {
+    router.use((req, res, next) => {
+      const providedKey = req.header('x-api-key')
+      if (providedKey !== apiKey) {
+        return res.status(401).json({ message: 'Invalid API key' })
+      }
+      return next()
+    })
+  }
 
   router.post('/generate', async (req, res) => {
     let payload: GenerateRequestPayload

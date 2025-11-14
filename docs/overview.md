@@ -17,7 +17,7 @@
 - **Webフレームワーク**: Express。シンプルなREST APIとDI構造が取りやすい。
 - **配信サーバー**: node-media-server（RTMP/HTTP-FLV）。OBSから `rtmp://localhost:1935/live/main` を参照。
 - **メディア制御**: ffmpeg + fluent-ffmpeg ラッパー。映像ループや音声ミックスをシェルプロセスとして管理。
-- **設定**: `config/stream-profile.json` を起動時に読み込み。待機モーション複数＋単一音声プロファイル（VOICEVOXのURLやSpeaker ID含む）を定義し、ホットリロードは不要。
+- **設定**: `config/stream-profile.json` を起動時に読み込み。待機モーション複数＋単一音声プロファイル（VOICEVOXのURLやSpeaker ID含む）に加えて `server.port`/`server.host` や任意の `server.apiKey`（`X-API-Key` で検証）を定義し、ホットリロードは不要。
 - **状態管理**: アプリ内の `StreamSession` が現在の状態・実行中プロセス・キューを集中管理。
 
 ## 全体アーキテクチャ

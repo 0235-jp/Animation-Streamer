@@ -11,11 +11,11 @@ describe('createGenerationRouter', () => {
     vi.spyOn(logger, 'error').mockReturnValue(undefined)
   })
 
-  const createApp = (processBatch: (payload: unknown, handler?: any) => Promise<any>) => {
+  const createApp = (processBatch: (payload: unknown, handler?: any) => Promise<any>, apiKey?: string) => {
     const service = { processBatch }
     const app = express()
     app.use(express.json())
-    app.use('/api', createGenerationRouter(service as any))
+    app.use('/api', createGenerationRouter(service as any, { apiKey }))
     return app
   }
 
@@ -119,5 +119,46 @@ describe('createGenerationRouter', () => {
     expect(response.status).toBe(200)
     expect(response.text).toContain('"type":"error"')
     expect(response.text).toContain('Internal Server Error')
+  })
+
+  it('returns 401 when API key is required but missing', async () => {
+    const processBatch = vi.fn()
+    const app = createApp(processBatch as any, 'secret')
+
+    const response = await request(app)
+      .post('/api/generate')
+      .send({ requests: [{ action: 'idle', params: { durationMs: 200 } }] })
+
+    expect(response.status).toBe(401)
+    expect(response.body).toEqual({ message: 'Invalid API key' })
+    expect(processBatch).not.toHaveBeenCalled()
+  })
+
+  it('returns 401 when API key does not match', async () => {
+    const processBatch = vi.fn()
+    const app = createApp(processBatch as any, 'secret')
+
+    const response = await request(app)
+      .post('/api/generate')
+      .set('X-API-Key', 'invalid')
+      .send({ requests: [{ action: 'idle', params: { durationMs: 200 } }] })
+
+    expect(response.status).toBe(401)
+    expect(response.body).toEqual({ message: 'Invalid API key' })
+    expect(processBatch).not.toHaveBeenCalled()
+  })
+
+  it('allows requests when API key matches', async () => {
+    const app = createApp(async () => ({
+      kind: 'combined',
+      result: { outputPath: '/tmp/out.mp4', durationMs: 200, motionIds: [] },
+    }), 'secret')
+
+    const response = await request(app)
+      .post('/api/generate')
+      .set('X-API-Key', 'secret')
+      .send({ stream: false, debug: false, requests: [{ action: 'idle', params: { durationMs: 200 } }] })
+
+    expect(response.status).toBe(200)
   })
 })
