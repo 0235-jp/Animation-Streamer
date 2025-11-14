@@ -186,53 +186,6 @@ describe('GenerationService', () => {
     expect(result.results[0].motionIds).toBeUndefined()
   })
 
-  it('invokes onProgress handler before processing each action in streaming mode', async () => {
-    const { service } = createService()
-    const handler = { onProgress: vi.fn(), onResult: vi.fn() }
-    const payload: GenerateRequestPayload = {
-      stream: true,
-      requests: [
-        { action: 'idle', params: { durationMs: 300 } },
-        { action: 'speak', params: { text: 'hello' } },
-      ],
-    }
-
-    await service.processBatch(payload, handler)
-
-    expect(handler.onProgress).toHaveBeenCalledTimes(2)
-    expect(handler.onProgress).toHaveBeenNthCalledWith(1, {
-      id: '1',
-      action: 'idle',
-      status: 'started',
-    })
-    expect(handler.onProgress).toHaveBeenNthCalledWith(2, {
-      id: '2',
-      action: 'speak',
-      status: 'started',
-    })
-  })
-
-  it('aborts streaming generation when signal is aborted', async () => {
-    const { service } = createService()
-    const abortController = new AbortController()
-    const payload: GenerateRequestPayload = {
-      stream: true,
-      requests: [
-        { action: 'idle', params: { durationMs: 300 } },
-        { action: 'idle', params: { durationMs: 400 } },
-      ],
-    }
-
-    // Abort immediately before processing starts
-    abortController.abort()
-
-    await expect(service.processBatch(payload, undefined, abortController.signal)).rejects.toMatchObject({
-      message: 'Generation aborted by client',
-      statusCode: 499,
-      requestId: '1',
-    })
-  })
-
   it('exposes motionIds for streaming results when debug flag is true', async () => {
     const { service } = createService()
     const payload: GenerateRequestPayload = {

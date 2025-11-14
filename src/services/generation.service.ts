@@ -5,7 +5,7 @@ import { ResolvedAction, ResolvedConfig } from '../config/loader'
 import { ClipPlanner } from './clip-planner'
 import { MediaPipeline, type ClipSource, NoAudioTrackError } from './media-pipeline'
 import { VoicevoxClient, type VoicevoxVoiceOptions } from './voicevox'
-import type { ActionProgress, ActionResult, GenerateDefaults, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler } from '../types/generate'
+import type { ActionResult, GenerateDefaults, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler } from '../types/generate'
 import { logger } from '../utils/logger'
 
 class ActionProcessingError extends Error {
@@ -67,8 +67,7 @@ export class GenerationService {
 
   async processBatch(
     payload: GenerateRequestPayload,
-    handler?: StreamPushHandler,
-    signal?: AbortSignal
+    handler?: StreamPushHandler
   ): Promise<StreamBatchResult | CombinedBatchResult> {
     const defaults: GenerateDefaults = {
       emotion: payload.defaults?.emotion ?? 'neutral',
@@ -81,7 +80,7 @@ export class GenerationService {
     }))
 
     if (payload.stream) {
-      const results = await this.processStreamingBatch(indexedRequests, defaults, includeDebug, handler, signal)
+      const results = await this.processStreamingBatch(indexedRequests, defaults, includeDebug, handler)
       return { kind: 'stream', results }
     }
     const combined = await this.processCombinedBatch(indexedRequests, defaults, includeDebug)
@@ -92,28 +91,11 @@ export class GenerationService {
     indexedRequests: IndexedRequest[],
     defaults: GenerateDefaults,
     includeDebug: boolean,
-    handler?: StreamPushHandler,
-    signal?: AbortSignal
+    handler?: StreamPushHandler
   ): Promise<ActionResult[]> {
     const results: ActionResult[] = []
     for (const { item, requestId } of indexedRequests) {
-      // Check if the operation was aborted
-      if (signal?.aborted) {
-        logger.info({ requestId }, 'Generation aborted by client')
-        throw new ActionProcessingError('Generation aborted by client', requestId, 499)
-      }
-
       try {
-        // Notify progress: action started
-        if (handler?.onProgress) {
-          const progress: ActionProgress = {
-            id: requestId,
-            action: item.action,
-            status: 'started',
-          }
-          await handler.onProgress(progress)
-        }
-
         const result = await this.processSingle(item, defaults, requestId, includeDebug)
         if (handler?.onResult) {
           await handler.onResult(result)
