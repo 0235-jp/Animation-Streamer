@@ -25,6 +25,13 @@ export interface ActionResult {
   audioPath?: string
 }
 
+export interface ActionProgress {
+  id: string
+  action: string
+  status: 'started'
+}
+
 export interface StreamPushHandler {
   onResult?: (result: ActionResult) => void | Promise<void>
+  onProgress?: (progress: ActionProgress) => void | Promise<void>
 }
