@@ -11,11 +11,15 @@ export interface VoicevoxSynthesisParameters {
 }
 
 export interface VoicevoxConfig {
-  endpoint: string
+  endpoint?: string
 }
 
 export interface VoicevoxVoiceOptions extends VoicevoxSynthesisParameters {
   speakerId: number
+}
+
+export interface VoicevoxSynthesizeOptions {
+  endpoint?: string
 }
 
 type VoicevoxAudioQuery = Record<string, unknown> & {
@@ -28,24 +32,30 @@ type VoicevoxAudioQuery = Record<string, unknown> & {
 }
 
 export class VoicevoxClient {
-  private readonly endpoint: string
+  private readonly defaultEndpoint?: string
 
-  constructor(config: VoicevoxConfig) {
-    this.endpoint = config.endpoint.replace(/\/+$/, '')
+  constructor(config: VoicevoxConfig = {}) {
+    this.defaultEndpoint = config.endpoint?.replace(/\/+$/, '')
   }
 
-  async synthesize(text: string, outputPath: string, voice: VoicevoxVoiceOptions): Promise<string> {
+  async synthesize(
+    text: string,
+    outputPath: string,
+    voice: VoicevoxVoiceOptions,
+    options?: VoicevoxSynthesizeOptions
+  ): Promise<string> {
     const normalizedText = text.trim()
     if (!normalizedText) {
       throw new Error('音声合成テキストが空です')
     }
+    const endpoint = this.resolveEndpoint(options?.endpoint)
 
     const queryParams = new URLSearchParams({
       text: normalizedText,
       speaker: String(voice.speakerId),
     })
 
-    const queryResponse = await fetch(`${this.endpoint}/audio_query?${queryParams.toString()}`, {
+    const queryResponse = await fetch(`${endpoint}/audio_query?${queryParams.toString()}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -60,7 +70,7 @@ export class VoicevoxClient {
 
     const query = (await queryResponse.json()) as VoicevoxAudioQuery
     const adjustedQuery = this.applySynthesisOverrides(query, voice)
-    const synthResponse = await fetch(`${this.endpoint}/synthesis?speaker=${voice.speakerId}`, {
+    const synthResponse = await fetch(`${endpoint}/synthesis?speaker=${voice.speakerId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(adjustedQuery),
@@ -82,5 +92,13 @@ export class VoicevoxClient {
       Object.entries(synthesisParams).filter(([, value]) => value !== undefined)
     )
     return { ...query, ...definedOverrides }
+  }
+
+  private resolveEndpoint(override?: string): string {
+    const endpoint = override ?? this.defaultEndpoint
+    if (!endpoint) {
+      throw new Error('VOICEVOX endpointが設定されていません')
+    }
+    return endpoint.replace(/\/+$/, '')
   }
 }

@@ -46,14 +46,9 @@ export const audioProfileSchema = synthesisParamsSchema.extend({
   voices: z.array(voicevoxVoiceSchema).optional(),
 })
 
-export const configSchema = z.object({
-  server: z
-    .object({
-      port: z.number().int().positive().default(4000),
-      host: z.string().min(1).default('localhost'),
-      apiKey: z.string().min(1).optional(),
-    })
-    .default({ port: 4000, host: 'localhost' }),
+const characterSchema = z.object({
+  id: z.string().min(1),
+  displayName: z.string().min(1).optional(),
   actions: z.array(actionSchema).default([]),
   idleMotions: sizedMotionSchema,
   speechMotions: sizedMotionSchema,
@@ -64,6 +59,17 @@ export const configSchema = z.object({
     })
     .optional(),
   audioProfile: audioProfileSchema,
+})
+
+export const configSchema = z.object({
+  server: z
+    .object({
+      port: z.number().int().positive().default(4000),
+      host: z.string().min(1).default('localhost'),
+      apiKey: z.string().min(1).optional(),
+    })
+    .default({ port: 4000, host: 'localhost' }),
+  characters: z.array(characterSchema).min(1),
   assets: z.object({
     tempDir: z.string().min(1),
   }),

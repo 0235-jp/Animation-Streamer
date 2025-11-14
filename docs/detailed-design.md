@@ -38,7 +38,7 @@ animation-streamer/
 
 ## 2. 設定ファイル `config/stream-profile.json`
 - 起動時にのみ読み込み、稼働中は変更を反映しない。
-- アプリは1キャラクター前提のため音声プロファイルは1件のみ定義する。
+- キャラクターごとにモーションと音声プロファイルを定義し、リクエストで `characterId` を指定して利用する。どのキャラクターを使うかは API 呼び出し側で必ず明示する。
 - サンプル:
 ```json
 {
@@ -48,62 +48,89 @@ animation-streamer/
     "apiKey": "optional-api-key"
   },
   "rtmp": { "outputUrl": "rtmp://127.0.0.1:1935/live/main" },
-  "actions": [
-    { "id": "start", "path": "../example/motion/start.mp4" }
-  ],
-  "idleMotions": {
-    "large": [
-      { "id": "idle-default-large", "emotion": "neutral", "path": "../example/motion/idle.mp4" }
-    ],
-    "small": [
-      { "id": "idle-default-small", "emotion": "neutral", "path": "../example/motion/talk_idle.mp4" }
-    ]
-  },
-  "speechMotions": {
-    "large": [
-      { "id": "talk-default-large", "emotion": "neutral", "path": "../example/motion/talk_large.mp4" },
-    ],
-    "small": [
-      { "id": "talk-default-small", "emotion": "neutral", "path": "../example/motion/talk_small.mp4" },
-    ]
-  },
-  "speechTransitions": {
-    "enter": [
-      { "id": "enter-neutral", "emotion": "neutral", "path": "../example/motion/enter.mp4" },
-      { "id": "enter-happy", "emotion": "happy", "path": "../example/motion/enter.mp4" }
-    ],
-    "exit": [
-      { "id": "exit-neutral", "emotion": "neutral", "path": "../example/motion/exit.mp4" },
-      { "id": "exit-happy", "emotion": "happy", "path": "../example/motion/exit.mp4" }
-    ]
-  },
-  "audioProfile": {
-    "ttsEngine": "voicevox",
-    "voicevoxUrl": "http://127.0.0.1:50021",
-    "speakerId": 1,
-    "voices": [
-      {
-        "emotion": "neutral",
-        "speakerId": 1,
-        "speedScale": 1.1
+  "characters": [
+    {
+      "id": "anchor-a",
+      "displayName": "Anchor A",
+      "actions": [
+        { "id": "start", "path": "../example/motion/start.mp4" }
+      ],
+      "idleMotions": {
+        "large": [
+          { "id": "idle-a-large", "emotion": "neutral", "path": "../example/motion/idle.mp4" }
+        ],
+        "small": [
+          { "id": "idle-a-small", "emotion": "neutral", "path": "../example/motion/talk_idle.mp4" }
+        ]
       },
-      {
-        "emotion": "happy",
-        "speakerId": 3,
-        "pitchScale": 0.3
+      "speechMotions": {
+        "large": [
+          { "id": "talk-a-large", "emotion": "neutral", "path": "../example/motion/talk_large.mp4" },
+          { "id": "talk-a-happy-large", "emotion": "happy", "path": "../example/motion/talk_large.mp4" }
+        ],
+        "small": [
+          { "id": "talk-a-small", "emotion": "neutral", "path": "../example/motion/talk_small.mp4" }
+        ]
+      },
+      "speechTransitions": {
+        "enter": [
+          { "id": "a-enter-neutral", "emotion": "neutral", "path": "../example/motion/enter.mp4" }
+        ],
+        "exit": [
+          { "id": "a-exit-neutral", "emotion": "neutral", "path": "../example/motion/exit.mp4" }
+        ]
+      },
+      "audioProfile": {
+        "ttsEngine": "voicevox",
+        "voicevoxUrl": "http://127.0.0.1:50021",
+        "speakerId": 1,
+        "voices": [
+          { "emotion": "neutral", "speakerId": 1, "speedScale": 1.1 },
+          { "emotion": "happy", "speakerId": 3, "pitchScale": 0.3 }
+        ]
       }
-    ]
-  },
+    },
+    {
+      "id": "anchor-b",
+      "displayName": "Anchor B",
+      "actions": [
+        { "id": "bow", "path": "../example/motion/bow.mp4" }
+      ],
+      "idleMotions": {
+        "large": [
+          { "id": "idle-b-large", "emotion": "neutral", "path": "../example/motion/idle.mp4" }
+        ],
+        "small": [
+          { "id": "idle-b-small", "emotion": "neutral", "path": "../example/motion/talk_idle.mp4" }
+        ]
+      },
+      "speechMotions": {
+        "large": [
+          { "id": "talk-b-large", "emotion": "neutral", "path": "../example/motion/talk_large.mp4" }
+        ],
+        "small": [
+          { "id": "talk-b-small", "emotion": "neutral", "path": "../example/motion/talk_small.mp4" }
+        ]
+      },
+      "audioProfile": {
+        "ttsEngine": "voicevox",
+        "voicevoxUrl": "http://127.0.0.1:50021",
+        "speakerId": 8
+      }
+    }
+  ],
   "assets": { "tempDir": "./tmp" }
 }
 ```
 - `server.host` は API がバインドするアドレスで、デフォルトは `localhost`。LAN 越しに公開する場合は `0.0.0.0` へ設定できる。
 - `server.apiKey` を設定すると `/api/*` エンドポイントで `X-API-Key` ヘッダー照合を行い、未設定の場合は認証なしで利用できる。ヘッダー値は平文で比較し、マッチしない場合は 401 を返す。
-- `actions` は `action` に任意IDを指定するための単発モーション定義。`speak` / `idle` は予約語のため登録不可。サーバー側ではリクエストの `action` 値を小文字へ正規化して照合するため、`config.actions[].id` も全て小文字で記述しておくこと。
-- `idleMotions` は待機モーションのプール。`speechMotions` は `large` / `small` ごとに配列を分け、感情ごとにモーションセットを切り替えられる。
-- `speechTransitions` を設定すると、`speak` アクションの先頭に `enter`（例: idle→talk）、末尾に `exit`（例: talk→idle）を自動挿入する。遷移にも `emotion` を設定でき、`speechMotions` と同様に「一致したemotion → neutral → その他」の優先順位で選択される。
-- `path` はffmpegが読めるローカルパス。
-- `audioProfile` は唯一のTTS設定として VOICEVOX のURLやspeakerIdに加え、`speedScale`/`pitchScale`/`intonationScale`/`volumeScale` や `outputSamplingRate`・`outputStereo` などの合成パラメータを任意で含む。`voices` 配列を指定すると、感情（`emotion`）ごとに話者 ID や調整値を切り替えられ、モーション選択と同じ優先順位で `requests[].params.emotion` に応じた TTS プロファイルが選択される。
+- API リクエストではトップレベルの `characterId` で使用キャラクターを指定し、同一バッチ内のすべてのアクションがそのキャラクターを参照する（未指定時は400）。
+- `characters` には1件以上を登録し、`displayName` はUIやログに表示するための任意フィールド。
+- `characters[].actions` はキャラクター固有の単発モーション定義。`speak` / `idle` は予約語のため登録不可で、IDは小文字推奨。
+- `characters[].idleMotions` は待機モーションのプール。`speechMotions` は `large` / `small` ごとに配列を分け、感情ごとにモーションセットを切り替えられる。
+- `characters[].speechTransitions` を設定すると、`speak` アクションの先頭に `enter`（例: idle→talk）、末尾に `exit`（例: talk→idle）をキャラクター単位で自動挿入する。遷移にも `emotion` を設定でき、`speechMotions` と同様に「一致したemotion → neutral → その他」の優先順位で選択される。
+- 各モーション `path` はffmpegが読めるローカルパス。
+- `characters[].audioProfile` はキャラクターに紐づくTTS設定として VOICEVOX のURLやspeakerIdに加え、`speedScale`/`pitchScale`/`intonationScale`/`volumeScale` や `outputSamplingRate`・`outputStereo` などの合成パラメータを任意で含む。`voices` 配列を指定すると、感情（`emotion`）ごとに話者 ID や調整値を切り替えられ、モーション選択と同じ優先順位で `requests[].params.emotion` に応じた TTS プロファイルが選択される。
 
 ## 3. 状態管理
 - `interface StreamState { sessionId: string; phase: 'IDLE'|'WAITING'|'SPEECH'|'STOPPED'; activeMotionId?: string; queueLength: number; }
@@ -118,12 +145,13 @@ animation-streamer/
 - `GenerationService` はストリーム状態とは独立したジョブ（`generate` API呼び出し）を扱うため、`StreamSession` のロックとは切り離されている。現状は1リクエスト内のアクションを逐次処理し、API呼び出し単位で完結する（全体キュー／同時実行数制御は今後の拡張候補）。
 
 ## 4. IdleLoopController（待機・発話共通プレイリスト）
-- 入力: `idleMotions: Motion[]`, `outputUrl`, `ProcessManager`。
+- 入力: `characterProfile: CharacterProfile`（`idleMotions` / `speechMotions` / `speechTransitions` を内包）、`outputUrl`, `ProcessManager`。
 - 実装戦略: ffmpegの`concat`デマルチプレクサを使い、待機モーションと発話モーションのプレイリストを標準入力から逐次供給する。ffmpegプロセスは常駐し、ループ・割込みとも同一ストリーム内で処理してフレームギャップを生まない。
   1. `start()` で `ffmpeg -re -f concat -safe 0 -i pipe:0 -c copy -f flv <output>` を起動し、`stdin`へ最初の待機モーションエントリ（`file '<path>'`）を書き込む。
   2. ffmpegは現在のモーション再生中に次エントリが届くとシームレスに続きの動画として扱う。`IdleLoopController`は動画終了見込み時間の少し前に次の待機モーションをランダム選択して`stdin`へ追記し、常に数件のバッファを確保する。
   3. `SpeechTaskQueue` から「次は発話モーションを再生したい」というリクエストを受けると、待機モーションの追記を一時的に停止し、次エントリとして発話モーションを挿入する。そのモーションが再生されている間にも、終了後に続く待機モーションを先行予約する。
   4. `stop()` はChildProcessへSIGTERM→timeout→SIGKILL。停止時は`stdin`を閉じて `concat` を自然終了させる。
+- キャラクター変更を伴う場合は `StreamService` から `switchCharacter(newProfile)` を呼び、バッファ内の待機モーションが流れ終わったタイミングで新しい `characterProfile` に基づくプレイリストへ切り替える。これにより待機ストリームを止めずにキャラクター固有のモーションへ移行できる。
 - 待機モーションの末尾フレームと発話モーションの先頭フレームをデザイナー側で揃えておけば、プレイリスト挿入のみで「待機→発話→待機」が一切止まらず繋がる。
 
 ## 5. SpeechTaskQueue (将来実装)
@@ -142,10 +170,7 @@ animation-streamer/
 ```jsonc
 {
   "stream": true,
-  "defaults": {
-    "emotion": "neutral",
-    "idleMotionId": "idle-default-large"
-  },
+  "characterId": "anchor-a",
   "requests": [
     {
       "action": "speak",
@@ -159,11 +184,11 @@ animation-streamer/
       "action": "idle",
       "params": {
         "durationMs": 1000,
-        "motionId": "idle-default-large"
+        "motionId": "idle-a-large"
       }
     },
     {
-      "action": "start"
+      "action": "bow"
     }
   ],
   "metadata": {
@@ -172,21 +197,23 @@ animation-streamer/
 }
 ```
 - `stream`: `true` の場合は逐次レスポンス（chunked JSON / SSE）で生成完了ごとに結果をpush。`false`または未指定時は全アクション完了後にまとめて返す。
-- `defaults`: バッチ内の共通既定値。`requests[].params` に同名キーがあればそちらを優先。
+- `defaults`: バッチ内の共通既定値（emotion や idleMotionId など）。アクション個別の `params` があればそちらを優先する。
 - `requests` は記述順に処理され、レスポンスの `id` はサーバー側で `1, 2, ...` と自動採番される（クライアント指定は不要）。
-- `requests[].action`: `speak` / `idle` / 設定ファイルで定義した `actions[].id` のいずれか。`speak` と `idle` は予約語のため `actions` には登録不可。
+- `requests[].action`: `speak` / `idle` / 設定ファイルで定義した `characters[*].actions[].id` のいずれか。`speak` と `idle` は予約語のため `actions` には登録不可。
 - `requests[].params`: アクション固有の入力。将来タグ経由で話速・ポーズを制御できるよう `tags: string[]` を受け付けておく。
 
 ### 6.2 アクション種別
 - **speak**
   - 必須: `text`。`emotion` は任意（未指定時は `defaults.emotion` → `neutral`）。emotion指定があっても該当モーションが無い場合は `neutral` プールへフォールバックする。
-  - VOICEVOX で音声合成 → `MediaPipeline.normalizeAudio` で 48kHz ステレオ化 → `MediaPipeline.trimAudioSilence` で前後の無音を除去し、実際の発話部分だけを残す。この「トリミング済み音声」の尺を計測して発話モーションを割り当てる。`speechTransitions.enter/exit` が定義されている場合は、トリミング済み音声の前後にサイレントパディングを付与して `idle→talk` / `talk→idle` のブリッジ動画と同期させる。
+  - リクエスト直下の `characterId` で指定されたキャラクターの `speechMotions` と `audioProfile` を利用する。
+  - VOICEVOX で音声合成 → `MediaPipeline.normalizeAudio` で 48kHz ステレオ化 → `MediaPipeline.trimAudioSilence` で前後の無音を除去し、実際の発話部分だけを残す。この「トリミング済み音声」の尺を計測して発話モーションを割り当てる。対象キャラクターで `speechTransitions.enter/exit` が定義されている場合は、トリミング済み音声の前後にサイレントパディングを付与して `idle→talk` / `talk→idle` のブリッジ動画と同期させる。
   - `speechMotions` を emotion + type(Large/Small)でグループ化し、`animation-streamer-example` の `buildTimelinePlan` と同様に Largeで埋めて余りをSmallで補完。emotionに一致するモーションが無ければ `neutral` → その他任意順でフォールバック。
 - **idle**
   - 必須: `durationMs`。任意: `motionId`（明示指定時はそのモーションだけで構成）、`emotion`（待機モーションの感情タグでフィルタ）。
-  - 音声は生成せず、`idleMotions` をLarge優先/Small補完で `durationMs` をカバーする。必要に応じて `anullsrc` で無音AACを生成し動画長に合わせる。
-- **任意アクション（config.actions）**
-  - `action` フィールドの値は `config.actions[].id`（小文字）と一致している必要がある。事前登録された動画1本を合成して出力し、動画に音声トラックが含まれていれば抽出して長さ調整のうえ再利用する。音声が存在しない場合のみ `anullsrc` を生成して多重化する。
+  - リクエストの `characterId` で選択されたキャラクターの `idleMotions` をLarge優先/Small補完で `durationMs` をカバーする。`motionId` はそのキャラクターのモーションID空間内で照合する。
+  - 音声は生成せず、必要に応じて `anullsrc` で無音AACを生成し動画長に合わせる。
+- **任意アクション（characters[*].actions）**
+  - `action` フィールドの値は選択されたキャラクターの `actions[].id`（小文字）と一致している必要がある。事前登録された動画1本を合成して出力し、動画に音声トラックが含まれていれば抽出して長さ調整のうえ再利用する。音声が存在しない場合のみ `anullsrc` を生成して多重化する。
 
 ### 6.3 処理フロー
 1. `GenerationService` がリクエスト全体をバリデート。`requests` が空なら400。
@@ -194,10 +221,10 @@ animation-streamer/
 3. `speak`:
    1. `VoicevoxClient.synthesize(text)` でWAV生成。
    2. `MediaPipeline.normalizeAudio` で 48kHz / stereo に揃えたあと、`MediaPipeline.trimAudioSilence` で前後無音を削除。トリミング済み音声を発話本体として保持し、このファイルの長さを `ClipPlanner` の入力に使う。
-   3. `ClipPlanner.selectSpeechClips(emotion, duration)` がモーションリストを返す。`speechTransitions.enter/exit` が設定されていれば、リストの先頭にidle→talk、末尾にtalk→idleのトランジションを差し込み、音声側は前後にサイレントパディングを入れて同期させる。
+   3. `ClipPlanner.selectSpeechClips(characterId, emotion, duration)` がキャラクター固有のモーションリストを返す。`character.speechTransitions.enter/exit` が設定されていれば、リストの先頭にidle→talk、末尾にtalk→idleのトランジションを差し込み、音声側は前後にサイレントパディングを入れて同期させる。
    4. `MediaPipeline.compose(clips, audioPath, duration)` が concat用リストを作り、ffmpegで MP4 を出力（音声はトリミング済み＋パディング済みのものを利用）。
-4. `idle`: `ClipPlanner.selectIdleClips(duration, emotion)` → `MediaPipeline.compose(clips, null, duration)`。
-5. 任意アクション: `actions` から動画パスを取得し単体で `compose`。このとき `planCustomAction` が動画に含まれる音声トラックを `MediaPipeline.extractAudioTrack` → `fitAudioDuration` で整形し、存在しない場合のみ `createSilentAudio` を使う。よってアクション独自の効果音やBGMはモーションと一緒に再生される。
+4. `idle`: `ClipPlanner.selectIdleClips(characterId, duration, emotion?)` → `MediaPipeline.compose(clips, null, duration)`。
+5. 任意アクション: 選択キャラクターの `actions` から動画パスを取得し単体で `compose`。このとき `planCustomAction` が動画に含まれる音声トラックを `MediaPipeline.extractAudioTrack` → `fitAudioDuration` で整形し、存在しない場合のみ `createSilentAudio` を使う。よってアクション独自の効果音やBGMはモーションと一緒に再生される。
 6. `stream === true` の場合はアクション単位で即座にffmpegを走らせ、生成順にNDJSONで返却する。
 7. `stream === false` の場合は、すべてのアクション音声とモーションを一つのタイムラインに並べ、1回のffmpeg実行で最終MP4を生成する（レスポンスは `outputPath` / `durationMs` などのメタ情報を直列で返す）。
 8. 失敗時はその地点で処理を停止し、レスポンスに失敗IDとエラー内容を含める。
@@ -218,14 +245,14 @@ animation-streamer/
 
 ## 7. MediaPipeline / ClipPlanner
 - **ClipPlanner**
-  - `selectSpeechClips(emotion, duration)` と `selectIdleClips(duration)` を提供。`animation-streamer-example/src/lib/timeline.ts` の Large/Small選択ロジックをサーバーサイドへ移植し、durationをカバーするまでランダムにLargeを優先・余剰をSmallで補完する。
-  - emotionごとのプールを事前に構築し、ヒットしない場合は `neutral` → `その他` の順でフォールバック。
+  - `selectSpeechClips(characterId, emotion, duration)` と `selectIdleClips(characterId, duration, emotion?)` を提供。`animation-streamer-example/src/lib/timeline.ts` の Large/Small選択ロジックをサーバーサイドへ移植し、durationをカバーするまでランダムにLargeを優先・余剰をSmallで補完する。
+  - キャラクターとemotionごとのプールを事前に構築し、モーションがヒットしない場合は `neutral` → `その他` の順でフォールバック。
 - **MediaPipeline**
   - VOICEVOX呼び出しは `VoicevoxClient` が担い、`MediaPipeline` は受け取ったWAVを正規化・加工する役割に専念する。
   - `normalizeAudio(input)`：48kHz / stereo / `pcm_s16le` へ変換し、以降の処理を同一フォーマットに統一。
   - `trimAudioSilence(input, {levelDb})`：`silenceremove → areverse → silenceremove → areverse` の2段構成で、先頭・末尾の無音を独立して削除する。デフォルトでは -70dB 未満を無音とみなし、発話中のポーズは残る。戻り値はトリミング済みファイルパス。
   - `compose(clips, audioPath | null, durationMs)`：`clips` から `concat` ファイルを生成し、必要数だけ `ffmpeg -stream_loop` or 事前コピーで並べる。映像は `-c:v copy` で元素材のエンコード/解像度を維持し、音声が無い場合は `anullsrc` を入力に追加してAACトラックを生成。音声がある場合は、トリミング済み音声（＋必要なサイレントパディング、またはアクション動画から抽出したBGM）を入力に使う。
-    - モーション動画に残っている音声ストリームは `-map 0:v:0 -map 1:a:0` で強制的に破棄し、`compose` に渡した音声入力（VOICEVOX / 無音WAV / アクション用に抽出した音声）のみを最終MP4へ多重化する。したがって `speechMotions` / `idleMotions` / `speechTransitions` に音声トラックが残っていても出力へ混入しない一方、カスタムアクションは事前に抽出した音声がそのまま利用される。
+    - モーション動画に残っている音声ストリームは `-map 0:v:0 -map 1:a:0` で強制的に破棄し、`compose` に渡した音声入力（VOICEVOX / 無音WAV / アクション用に抽出した音声）のみを最終MP4へ多重化する。したがって `characters[].speechMotions` / `characters[].idleMotions` / `characters[].speechTransitions` に音声トラックが残っていても出力へ混入しない一方、カスタムアクションは事前に抽出した音声がそのまま利用される。
   - 合成ファイルはジョブディレクトリ内に MP4 で書き出し、`GenerationService` が `assets.tempDir` へ移動してクライアントへ絶対パスを返す。映像コーデックは素材準拠（`copy`）で、音声のみAACへ揃える。
   - 生成中の一時ファイルは `CleanupService` に登録しておき、成功/失敗に関わらず削除。
 - ストリーム配信用の `createIdleProcess` / `createSpeechProcess` も将来ここにまとめるが、現段階では `generate` 用 `compose` が中心。

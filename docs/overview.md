@@ -3,7 +3,7 @@
 ## 目的
 - ローカル環境で待機モーション動画を常時ストリームし、OBSなどの配信ツールから取得してYouTube等へ中継できるようにする。
 - テキスト入力に応じて音声を生成し、音声と発話用モーション動画を組み合わせて待機ストリームへ差し込むための土台を用意する。
-- 動画・音声素材やTTS設定をJSONで柔軟に管理し、あとからモーションを増やしやすくする（一人キャラクター想定のため音声プロファイルは1件固定）。
+- 動画・音声素材やTTS設定をJSONで柔軟に管理し、あとからモーションやキャラクターを増やしやすくする（リクエストで `characterId` を指定して切り替える）。
 
 ## スコープ
 - `start`/`stop` エンドポイントを備えたNode.jsベースのローカルサーバー。
@@ -17,7 +17,7 @@
 - **Webフレームワーク**: Express。シンプルなREST APIとDI構造が取りやすい。
 - **配信サーバー**: node-media-server（RTMP/HTTP-FLV）。OBSから `rtmp://localhost:1935/live/main` を参照。
 - **メディア制御**: ffmpeg + fluent-ffmpeg ラッパー。映像ループや音声ミックスをシェルプロセスとして管理。
-- **設定**: `config/stream-profile.json` を起動時に読み込み。待機モーション複数＋単一音声プロファイル（VOICEVOXのURLやSpeaker ID含む）に加えて `server.port`/`server.host` や任意の `server.apiKey`（`X-API-Key` で検証）を定義し、ホットリロードは不要。
+- **設定**: `config/stream-profile.json` を起動時に読み込み。キャラクターごとに待機/発話モーションやVOICEVOX設定を持たせ、リクエストで `characterId` を指定して選択する。`server.port`/`server.host` や任意の `server.apiKey`（`X-API-Key` で検証）も定義し、ホットリロードは不要。
 - **状態管理**: アプリ内の `StreamSession` が現在の状態・実行中プロセス・キューを集中管理。
 
 ## 全体アーキテクチャ
@@ -58,11 +58,11 @@ Controller     \                    /
    - 一時ファイルなどをクリーンアップし、状態をSTOPPEDへ。
 
 ## リクエストフロー（generate）
-1. クライアントは `stream`, `defaults`, `requests[]` を含むJSONをPOST（例: Section「Generateアクションリクエスト」参照）。
+1. クライアントは `characterId`, `stream`, `defaults`, `requests[]` を含むJSONをPOST（例: Section「Generateアクションリクエスト」参照）。
 2. `GenerationService` がアクションを先頭から順次処理。
-   - `speak`: VOICEVOXで音声合成 → ClipPlannerが emotion + Large/Small で発話モーションを決定 → `MediaPipeline` が concat + AAC でmp4を出力。
-   - `idle`: `durationMs` を満たすまで待機モーションをLarge優先で並べ、無音AACと多重化。
-   - 任意アクション: `config.actions` の動画を単発で出力。
+   - `speak`: VOICEVOXで音声合成 → ClipPlannerが emotion + Large/Small で発話モーションを決定 → `MediaPipeline` が concat + AAC でmp4を出力。キャラクター固有の `speechTransitions` があれば自動で差し込む。
+   - `idle`: `durationMs` を満たすまでキャラクターの待機モーションをLarge優先で並べ、無音AACと多重化。
+   - 任意アクション: 該当キャラクターの `actions` から動画を単発で出力。
 3. `stream = true` の場合は処理完了したアクションから順にNDJSONで返却。`false` の場合は全アクション完了後に配列で返却。
 4. `stream = false` の場合は全アクションを1本のタイムラインへ並べてffmpegで一括レンダリングし、最終MP4のみ `combined` として返す（個別クリップは返却しない）。
 5. 生成ファイルは `assets.tempDir` 配下に保存され、OBSや他プロセスが参照できる。
@@ -79,10 +79,7 @@ STOPPED --start--> IDLING
 ```jsonc
 {
   "stream": true,
-  "defaults": {
-    "emotion": "neutral",
-    "idleMotionId": "idle-default-large"
-  },
+  "characterId": "anchor-a",
   "requests": [
     { "action": "speak", "params": { "text": "こんにちは", "emotion": "happy" } },
     { "action": "idle", "params": { "durationMs": 1000 } },
@@ -91,9 +88,10 @@ STOPPED --start--> IDLING
 }
 ```
 - `requests` は記述順に処理され、レスポンスの `id` はサーバーが `1, 2, ...` と自動採番する。
+- `characterId` はリクエスト直下で必須指定（バッチ内の全アクションが同じキャラクターを参照する）。未指定の場合は400。
 - `speak` は `text` 必須／`emotion` 任意。emotionに合うモーションが無い場合は `neutral` プールを自動選択。
-- `idle` は `durationMs` 必須。`motionId` を指定するとそのモーションだけでタイムラインを組む。
-- 任意 `action` の値は `config.actions[].id` のいずれかに一致している必要がある（`speak`/`idle` を登録することはできない）。
+- `idle` は `durationMs` 必須。`motionId` を指定するとそのキャラクター内でそのモーションだけでタイムラインを組む。
+- 任意 `action` の値は選択されたキャラクターの `actions[].id` のいずれかに一致している必要がある（`speak`/`idle` は登録不可）。
 
 ## 将来拡張の指針
 - `text` エンドポイント：TTS連携、音声と発話モーションの合成、待機への復帰を順次処理する。
