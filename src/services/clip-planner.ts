@@ -114,10 +114,10 @@ export class ClipPlanner {
       return this.repeatSingleMotion(motion, durationMs)
     }
     const filteredLarge = normalizedEmotion
-      ? resources.idleLarge.filter((motion) => motion.emotion === normalizedEmotion)
+      ? resources.idleLarge.filter((motion) => normalizeEmotion(motion.emotion) === normalizedEmotion)
       : resources.idleLarge
     const filteredSmall = normalizedEmotion
-      ? resources.idleSmall.filter((motion) => motion.emotion === normalizedEmotion)
+      ? resources.idleSmall.filter((motion) => normalizeEmotion(motion.emotion) === normalizedEmotion)
       : resources.idleSmall
     const fallbackEmotionLarge = filteredLarge.length ? filteredLarge : resources.idleLarge
     const fallbackEmotionSmall = filteredSmall.length ? filteredSmall : resources.idleSmall
