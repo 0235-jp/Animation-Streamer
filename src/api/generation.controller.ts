@@ -26,16 +26,38 @@ export const createGenerationRouter = (generationService: GenerationService): Ro
       res.setHeader('Transfer-Encoding', 'chunked')
     }
 
+    // Handle client disconnect for streaming requests
+    const abortController = new AbortController()
+    let clientDisconnected = false
+
+    if (payload.stream) {
+      res.on('close', () => {
+        if (!res.writableEnded) {
+          clientDisconnected = true
+          abortController.abort()
+          logger.info('Client disconnected, aborting stream generation')
+        }
+      })
+    }
+
     try {
       const batchResult = await generationService.processBatch(
         payload,
         payload.stream
           ? {
+              onProgress: (progress) => {
+                if (!clientDisconnected) {
+                  res.write(toNdjson({ type: 'progress', progress }))
+                }
+              },
               onResult: (result) => {
-                res.write(toNdjson({ type: 'result', result }))
+                if (!clientDisconnected) {
+                  res.write(toNdjson({ type: 'result', result }))
+                }
               },
             }
-          : undefined
+          : undefined,
+        abortController.signal
       )
 
       if (batchResult.kind === 'stream') {

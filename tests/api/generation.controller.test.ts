@@ -80,6 +80,34 @@ describe('createGenerationRouter', () => {
     expect(response.text).toContain('"motionIds":["idle"]')
   })
 
+  it('streams progress events before results in streaming mode', async () => {
+    const actionProgress = { id: '1', action: 'speak', status: 'started' as const }
+    const actionResult = {
+      id: '1',
+      action: 'speak',
+      outputPath: '/tmp/out.mp4',
+      durationMs: 1200,
+    }
+    const app = createApp(async (_payload, handler) => {
+      await handler?.onProgress?.(actionProgress)
+      await handler?.onResult?.(actionResult)
+      return { kind: 'stream', results: [actionResult] }
+    })
+
+    const response = await request(app)
+      .post('/api/generate')
+      .send({ stream: true, requests: [{ action: 'speak', params: { text: 'test' } }] })
+
+    expect(response.status).toBe(200)
+    expect(response.text).toContain('"type":"progress"')
+    expect(response.text).toContain('"status":"started"')
+    expect(response.text).toContain('"type":"result"')
+    expect(response.text).toContain('"type":"done"')
+    const lines = response.text.trim().split('\n')
+    const firstEvent = JSON.parse(lines[0])
+    expect(firstEvent.type).toBe('progress')
+  })
+
   it('returns NDJSON error chunk when ActionProcessingError occurs during streaming', async () => {
     const app = createApp(async () => {
       throw new ActionProcessingError('stream error', '9', 418)

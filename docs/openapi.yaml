@@ -65,8 +65,12 @@ paths:
               schema:
                 type: string
                 description: >-
-                  NDJSON stream delivering objects like {"type":"result","result":{...}},
-                  ending with {"type":"done","count":N}.
+                  NDJSON stream delivering objects in the following order:
+                  1. {"type":"progress","progress":{...}} - Sent when each action starts
+                  2. {"type":"result","result":{...}} - Sent when each action completes
+                  3. {"type":"done","count":N} - Sent when all actions are complete
+                  If an error occurs, {"type":"error","id":"...","message":"..."} is sent instead.
+                  Client disconnection will abort the generation process.
         '400':
           description: Invalid request
           content:
@@ -147,6 +151,26 @@ components:
         audioPath:
           type: string
           nullable: true
+    ActionProgress:
+      type: object
+      required:
+        - id
+        - action
+        - status
+      properties:
+        id:
+          type: string
+          description: Action identifier (auto-assigned by server)
+        action:
+          type: string
+          description: Action type (speak/idle/custom)
+        status:
+          type: string
+          enum: [started, processing]
+          description: Current processing status
+        message:
+          type: string
+          description: Optional progress message
     CombinedResult:
       type: object
       required:
