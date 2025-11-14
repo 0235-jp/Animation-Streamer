@@ -27,27 +27,39 @@ describe('server bootstrap', () => {
 
   it('listens on config port when no PORT env is provided', async () => {
     createAppMock.mockResolvedValue({
-      app: { listen: listenMock.mockImplementation((_port, cb) => cb?.()) },
-      config: { server: { port: 4321 } },
+      app: {
+        listen: listenMock.mockImplementation((_port, _host, cb) => {
+          const callback = typeof _host === 'function' ? _host : cb
+          callback?.()
+        }),
+      },
+      config: { server: { port: 4321, host: '0.0.0.0' } },
     })
 
     await import('../src/server')
 
-    expect(listenMock).toHaveBeenCalledWith(4321, expect.any(Function))
-    expect(logger.info).toHaveBeenCalledWith({ port: 4321 }, 'Server started')
+    expect(listenMock).toHaveBeenCalledWith(4321, '0.0.0.0', expect.any(Function))
+    expect(logger.info).toHaveBeenCalledWith({ port: 4321, host: '0.0.0.0' }, 'Server started')
   })
 
   it('prefers PORT environment variable when provided', async () => {
     process.env.PORT = '9999'
+    process.env.HOST = '192.168.0.5'
     createAppMock.mockResolvedValue({
-      app: { listen: listenMock.mockImplementation((_port, cb) => cb?.()) },
-      config: { server: { port: 4321 } },
+      app: {
+        listen: listenMock.mockImplementation((_port, _host, cb) => {
+          const callback = typeof _host === 'function' ? _host : cb
+          callback?.()
+        }),
+      },
+      config: { server: { port: 4321, host: '127.0.0.1' } },
     })
 
     await import('../src/server')
 
-    expect(listenMock).toHaveBeenCalledWith(9999, expect.any(Function))
+    expect(listenMock).toHaveBeenCalledWith(9999, '192.168.0.5', expect.any(Function))
     delete process.env.PORT
+    delete process.env.HOST
   })
 
   it('logs and exits when app creation fails', async () => {

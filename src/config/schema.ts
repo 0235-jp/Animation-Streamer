@@ -50,8 +50,10 @@ export const configSchema = z.object({
   server: z
     .object({
       port: z.number().int().positive().default(4000),
+      host: z.string().min(1).default('localhost'),
+      apiKey: z.string().min(1).optional(),
     })
-    .default({ port: 4000 }),
+    .default({ port: 4000, host: 'localhost' }),
   actions: z.array(actionSchema).default([]),
   idleMotions: sizedMotionSchema,
   speechMotions: sizedMotionSchema,

@@ -38,10 +38,14 @@ curl -X POST http://localhost:4000/api/generate \
 
 `stream=false` の場合は `combined.outputPath` に 1 本にまとめたMP4パスが返却されます。 `stream=true` を指定すると各アクション完了ごとに NDJSON でレスポンスがストリーミングされます。
 
+`server.apiKey` を設定した場合は `-H 'X-API-Key: <your-key>'` を付与してください。
+
 ## 設定
 `config/stream-profile.json` でモーション動画やVOICEVOXエンドポイントなどを定義します。詳細は以下の通り。
 
 - server.port: HTTP API/Swagger UI が待ち受けるポート番号で、ローカル開発時は 4000 を想定しています。
+- server.host: API がバインドするホスト名/アドレスで、未指定時は `localhost` のみからアクセスできます。LAN 越しに公開する場合は `0.0.0.0` などに変更してください。
+- server.apiKey (任意): API キーを設定すると `/api/*` エンドポイントへのアクセスに `X-API-Key` ヘッダーが必須になります。未設定の場合は認証なしでアクセスできます。
 - actions: `generate` API の `action` リクエストで再生できる単発モーション群で、`speak`/`idle` は予約語のため使用できません。
   - id: API から参照する識別子で、`requests[].action` に指定します。
   - path: 再生する動画の相対/絶対パスで、ffmpeg がアクセスできるローカルファイルを指します。

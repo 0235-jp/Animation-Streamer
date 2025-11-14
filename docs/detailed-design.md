@@ -42,7 +42,11 @@ animation-streamer/
 - サンプル:
 ```json
 {
-  "server": { "port": 4000 },
+  "server": {
+    "port": 4000,
+    "host": "localhost",
+    "apiKey": "optional-api-key"
+  },
   "rtmp": { "outputUrl": "rtmp://127.0.0.1:1935/live/main" },
   "actions": [
     { "id": "start", "path": "../example/motion/start.mp4" }
@@ -93,6 +97,8 @@ animation-streamer/
   "assets": { "tempDir": "./tmp" }
 }
 ```
+- `server.host` は API がバインドするアドレスで、デフォルトは `localhost`。LAN 越しに公開する場合は `0.0.0.0` へ設定できる。
+- `server.apiKey` を設定すると `/api/*` エンドポイントで `X-API-Key` ヘッダー照合を行い、未設定の場合は認証なしで利用できる。ヘッダー値は平文で比較し、マッチしない場合は 401 を返す。
 - `actions` は `action` に任意IDを指定するための単発モーション定義。`speak` / `idle` は予約語のため登録不可。サーバー側ではリクエストの `action` 値を小文字へ正規化して照合するため、`config.actions[].id` も全て小文字で記述しておくこと。
 - `idleMotions` は待機モーションのプール。`speechMotions` は `large` / `small` ごとに配列を分け、感情ごとにモーションセットを切り替えられる。
 - `speechTransitions` を設定すると、`speak` アクションの先頭に `enter`（例: idle→talk）、末尾に `exit`（例: talk→idle）を自動挿入する。遷移にも `emotion` を設定でき、`speechMotions` と同様に「一致したemotion → neutral → その他」の優先順位で選択される。
