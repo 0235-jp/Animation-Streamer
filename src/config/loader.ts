@@ -40,12 +40,34 @@ export interface ResolvedSpeechTransitions {
   exit?: ResolvedTransitionMotion[]
 }
 
+export interface VoicevoxVoiceProfile {
+  emotion: string
+  speakerId: number
+  speedScale?: number
+  pitchScale?: number
+  intonationScale?: number
+  volumeScale?: number
+  outputSamplingRate?: number
+  outputStereo?: boolean
+}
+
+export interface ResolvedAudioProfile {
+  ttsEngine: 'voicevox'
+  voicevoxUrl: string
+  defaultVoice: VoicevoxVoiceProfile
+  voices: VoicevoxVoiceProfile[]
+}
+
 export interface ResolvedConfig
-  extends Omit<StreamerConfig, 'actions' | 'idleMotions' | 'speechMotions' | 'speechTransitions' | 'assets'> {
+  extends Omit<
+    StreamerConfig,
+    'actions' | 'idleMotions' | 'speechMotions' | 'speechTransitions' | 'assets' | 'audioProfile'
+  > {
   actions: ResolvedAction[]
   idleMotions: ResolvedIdlePools
   speechMotions: ResolvedSpeechPools
   speechTransitions?: ResolvedSpeechTransitions
+  audioProfile: ResolvedAudioProfile
   assets: {
     tempDir: string
     absoluteTempDir: string
@@ -115,6 +137,36 @@ export const loadConfig = async (configPath: string): Promise<ResolvedConfig> =>
       }
     : undefined
 
+  const normalizeVoiceEmotion = (emotion: string | undefined) => (emotion?.trim().toLowerCase() ?? 'neutral')
+  const normalizeVoice = (voice: VoicevoxVoiceProfile): VoicevoxVoiceProfile => ({
+    ...voice,
+    emotion: normalizeVoiceEmotion(voice.emotion),
+  })
+
+  const defaultVoice = normalizeVoice({
+    emotion: 'neutral',
+    speakerId: parsed.audioProfile.speakerId,
+    speedScale: parsed.audioProfile.speedScale,
+    pitchScale: parsed.audioProfile.pitchScale,
+    intonationScale: parsed.audioProfile.intonationScale,
+    volumeScale: parsed.audioProfile.volumeScale,
+    outputSamplingRate: parsed.audioProfile.outputSamplingRate,
+    outputStereo: parsed.audioProfile.outputStereo,
+  })
+
+  const voices = (parsed.audioProfile.voices ?? []).map((voice) =>
+    normalizeVoice({
+      emotion: voice.emotion,
+      speakerId: voice.speakerId,
+      speedScale: voice.speedScale,
+      pitchScale: voice.pitchScale,
+      intonationScale: voice.intonationScale,
+      volumeScale: voice.volumeScale,
+      outputSamplingRate: voice.outputSamplingRate,
+      outputStereo: voice.outputStereo,
+    })
+  )
+
   const absoluteTempDir = path.resolve(baseDir, parsed.assets.tempDir)
   await fs.mkdir(absoluteTempDir, { recursive: true })
 
@@ -124,6 +176,12 @@ export const loadConfig = async (configPath: string): Promise<ResolvedConfig> =>
     idleMotions,
     speechMotions,
     speechTransitions,
+    audioProfile: {
+      ttsEngine: parsed.audioProfile.ttsEngine,
+      voicevoxUrl: parsed.audioProfile.voicevoxUrl,
+      defaultVoice,
+      voices,
+    },
     assets: {
       tempDir: parsed.assets.tempDir,
       absoluteTempDir,

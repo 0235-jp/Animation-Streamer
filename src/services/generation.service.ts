@@ -4,8 +4,8 @@ import { randomUUID } from 'node:crypto'
 import { ResolvedAction, ResolvedConfig } from '../config/loader'
 import { ClipPlanner } from './clip-planner'
 import { MediaPipeline, type ClipSource, NoAudioTrackError } from './media-pipeline'
-import { VoicevoxClient } from './voicevox'
-import type { ActionResult, GenerateDefaults, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler } from '../types/generate'
+import { VoicevoxClient, type VoicevoxVoiceOptions } from './voicevox'
+import type { ActionProgress, ActionResult, GenerateDefaults, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler } from '../types/generate'
 import { logger } from '../utils/logger'
 
 class ActionProcessingError extends Error {
@@ -67,7 +67,8 @@ export class GenerationService {
 
   async processBatch(
     payload: GenerateRequestPayload,
-    handler?: StreamPushHandler
+    handler?: StreamPushHandler,
+    signal?: AbortSignal
   ): Promise<StreamBatchResult | CombinedBatchResult> {
     const defaults: GenerateDefaults = {
       emotion: payload.defaults?.emotion ?? 'neutral',
@@ -80,7 +81,7 @@ export class GenerationService {
     }))
 
     if (payload.stream) {
-      const results = await this.processStreamingBatch(indexedRequests, defaults, includeDebug, handler)
+      const results = await this.processStreamingBatch(indexedRequests, defaults, includeDebug, handler, signal)
       return { kind: 'stream', results }
     }
     const combined = await this.processCombinedBatch(indexedRequests, defaults, includeDebug)
@@ -91,11 +92,28 @@ export class GenerationService {
     indexedRequests: IndexedRequest[],
     defaults: GenerateDefaults,
     includeDebug: boolean,
-    handler?: StreamPushHandler
+    handler?: StreamPushHandler,
+    signal?: AbortSignal
   ): Promise<ActionResult[]> {
     const results: ActionResult[] = []
     for (const { item, requestId } of indexedRequests) {
+      // Check if the operation was aborted
+      if (signal?.aborted) {
+        logger.info({ requestId }, 'Generation aborted by client')
+        throw new ActionProcessingError('Generation aborted by client', requestId, 499)
+      }
+
       try {
+        // Notify progress: action started
+        if (handler?.onProgress) {
+          const progress: ActionProgress = {
+            id: requestId,
+            action: item.action,
+            status: 'started',
+          }
+          await handler.onProgress(progress)
+        }
+
         const result = await this.processSingle(item, defaults, requestId, includeDebug)
         if (handler?.onResult) {
           await handler.onResult(result)
@@ -345,7 +363,8 @@ export class GenerationService {
     const emotion = this.ensureOptionalString(params.emotion) ?? defaults.emotion ?? 'neutral'
 
     const audioPath = path.join(jobDir, `voice-${requestId}.wav`)
-    await this.voicevox.synthesize(text, audioPath)
+    const voiceProfile = this.resolveVoiceProfile(emotion)
+    await this.voicevox.synthesize(text, audioPath, voiceProfile)
     const normalizedAudio = await this.mediaPipeline.normalizeAudio(audioPath, jobDir, `voice-${requestId}`)
     const trimmedAudio = await this.mediaPipeline.trimAudioSilence(normalizedAudio, jobDir, `voice-${requestId}-trim`)
     const trimmedDuration = await this.mediaPipeline.getAudioDurationMs(trimmedAudio)
@@ -446,6 +465,17 @@ export class GenerationService {
       ...plan,
       audioPath,
     }
+  }
+
+  private resolveVoiceProfile(emotion: string | undefined): VoicevoxVoiceOptions {
+    const normalizedEmotion = (emotion ?? 'neutral').trim().toLowerCase() || 'neutral'
+    const matchingVoice = this.config.audioProfile.voices.find((voice) => voice.emotion === normalizedEmotion)
+    if (matchingVoice) return matchingVoice
+    if (normalizedEmotion !== 'neutral') {
+      const neutralVoice = this.config.audioProfile.voices.find((voice) => voice.emotion === 'neutral')
+      if (neutralVoice) return neutralVoice
+    }
+    return this.config.audioProfile.defaultVoice
   }
 
   private async buildIdlePlanData(

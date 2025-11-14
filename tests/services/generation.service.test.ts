@@ -5,6 +5,7 @@ import { NoAudioTrackError } from '../../src/services/media-pipeline'
 import type { ClipPlanResult, ClipPlanner } from '../../src/services/clip-planner'
 import type { MediaPipeline } from '../../src/services/media-pipeline'
 import type { VoicevoxClient } from '../../src/services/voicevox'
+import type { ResolvedConfig } from '../../src/config/loader'
 import type { ActionResult, GenerateRequestPayload } from '../../src/types/generate'
 import { createResolvedConfig } from '../factories/config'
 
@@ -32,7 +33,7 @@ const createClipPlan = (overrides?: Partial<ClipPlanResult>): ClipPlanResult => 
   ...overrides,
 })
 
-const createService = () => {
+const createService = (configOverride?: ResolvedConfig) => {
   const clipPlanner = {
     buildSpeechPlan: vi.fn().mockResolvedValue(createClipPlan({ talkDurationMs: 900, enterDurationMs: 100, exitDurationMs: 100 })),
     buildIdlePlan: vi.fn().mockResolvedValue(createClipPlan()),
@@ -61,14 +62,15 @@ const createService = () => {
     synthesize: vi.fn().mockResolvedValue('/tmp/voice.wav'),
   }
 
+  const config = configOverride ?? createResolvedConfig()
   const service = new GenerationService({
-    config: createResolvedConfig(),
+    config,
     clipPlanner: clipPlanner as unknown as ClipPlanner,
     mediaPipeline: mediaPipeline as unknown as MediaPipeline,
     voicevox: voicevox as unknown as VoicevoxClient,
   })
 
-  return { service, clipPlanner, mediaPipeline, voicevox }
+  return { service, clipPlanner, mediaPipeline, voicevox, config }
 }
 
 describe('GenerationService', () => {
@@ -94,9 +96,61 @@ describe('GenerationService', () => {
     expect(result.result.motionIds).toBeUndefined()
     expect(clipPlanner.buildSpeechPlan).toHaveBeenCalledTimes(1)
     expect(clipPlanner.buildIdlePlan).toHaveBeenCalledTimes(1)
-    expect(voicevox.synthesize).toHaveBeenCalledWith('こんにちは', expect.stringContaining('voice-1.wav'))
+    expect(voicevox.synthesize).toHaveBeenCalledWith(
+      'こんにちは',
+      expect.stringContaining('voice-1.wav'),
+      expect.objectContaining({ speakerId: 1 })
+    )
     expect(mediaPipeline.concatAudioFiles).toHaveBeenCalled()
     expect(mediaPipeline.compose).toHaveBeenCalledTimes(1)
+  })
+
+  it('selects emotion-specific TTS profile when available', async () => {
+    const { service, voicevox } = createService()
+    const payload: GenerateRequestPayload = {
+      stream: false,
+      requests: [{ action: 'speak', params: { text: 'やっほー', emotion: 'happy' } }],
+    }
+
+    await service.processBatch(payload)
+
+    expect(voicevox.synthesize).toHaveBeenCalledWith(
+      'やっほー',
+      expect.any(String),
+      expect.objectContaining({ speakerId: 2, pitchScale: 0.2 })
+    )
+  })
+
+  it('falls back to default TTS profile when emotion and neutral overrides are unavailable', async () => {
+    const customConfig = createResolvedConfig()
+    customConfig.audioProfile = {
+      ...customConfig.audioProfile,
+      voices: [
+        {
+          emotion: 'sad',
+          speakerId: 4,
+          speedScale: 0.9,
+        },
+      ],
+      defaultVoice: {
+        emotion: 'neutral',
+        speakerId: 9,
+        volumeScale: 0.7,
+      },
+    }
+    const { service, voicevox } = createService(customConfig)
+    const payload: GenerateRequestPayload = {
+      stream: false,
+      requests: [{ action: 'speak', params: { text: 'fallback test', emotion: 'angry' } }],
+    }
+
+    await service.processBatch(payload)
+
+    expect(voicevox.synthesize).toHaveBeenCalledWith(
+      'fallback test',
+      expect.any(String),
+      expect.objectContaining({ speakerId: 9, volumeScale: 0.7 })
+    )
   })
 
   it('includes aggregated motionIds in combined result when debug flag is true', async () => {
@@ -130,6 +184,53 @@ describe('GenerationService', () => {
     expect(handler.onResult).toHaveBeenCalledTimes(1)
     expect(result.results[0]).toMatchObject({ action: 'idle' })
     expect(result.results[0].motionIds).toBeUndefined()
+  })
+
+  it('invokes onProgress handler before processing each action in streaming mode', async () => {
+    const { service } = createService()
+    const handler = { onProgress: vi.fn(), onResult: vi.fn() }
+    const payload: GenerateRequestPayload = {
+      stream: true,
+      requests: [
+        { action: 'idle', params: { durationMs: 300 } },
+        { action: 'speak', params: { text: 'hello' } },
+      ],
+    }
+
+    await service.processBatch(payload, handler)
+
+    expect(handler.onProgress).toHaveBeenCalledTimes(2)
+    expect(handler.onProgress).toHaveBeenNthCalledWith(1, {
+      id: '1',
+      action: 'idle',
+      status: 'started',
+    })
+    expect(handler.onProgress).toHaveBeenNthCalledWith(2, {
+      id: '2',
+      action: 'speak',
+      status: 'started',
+    })
+  })
+
+  it('aborts streaming generation when signal is aborted', async () => {
+    const { service } = createService()
+    const abortController = new AbortController()
+    const payload: GenerateRequestPayload = {
+      stream: true,
+      requests: [
+        { action: 'idle', params: { durationMs: 300 } },
+        { action: 'idle', params: { durationMs: 400 } },
+      ],
+    }
+
+    // Abort immediately before processing starts
+    abortController.abort()
+
+    await expect(service.processBatch(payload, undefined, abortController.signal)).rejects.toMatchObject({
+      message: 'Generation aborted by client',
+      statusCode: 499,
+      requestId: '1',
+    })
   })
 
   it('exposes motionIds for streaming results when debug flag is true', async () => {

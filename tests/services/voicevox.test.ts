@@ -34,17 +34,17 @@ describe('VoicevoxClient', () => {
   })
 
   it('rejects empty text inputs', async () => {
-    const client = new VoicevoxClient({ endpoint: 'http://localhost:50021', speakerId: 1 })
-    await expect(client.synthesize('   ', '/tmp/out.wav')).rejects.toThrow('音声合成テキストが空です')
+    const client = new VoicevoxClient({ endpoint: 'http://localhost:50021' })
+    await expect(client.synthesize('   ', '/tmp/out.wav', { speakerId: 1 })).rejects.toThrow('音声合成テキストが空です')
   })
 
   it('raises descriptive error when audio_query fails', async () => {
     fetchMock.mockResolvedValueOnce(
       createResponse({ ok: false, status: 500, text: 'engine error', json: { message: 'error' } })
     )
-    const client = new VoicevoxClient({ endpoint: 'http://localhost:50021', speakerId: 1 })
+    const client = new VoicevoxClient({ endpoint: 'http://localhost:50021' })
 
-    await expect(client.synthesize('こんにちは', '/tmp/out.wav')).rejects.toThrow(
+    await expect(client.synthesize('こんにちは', '/tmp/out.wav', { speakerId: 1 })).rejects.toThrow(
       'VOICEVOX audio_query に失敗しました (500): engine error'
     )
   })
@@ -53,9 +53,9 @@ describe('VoicevoxClient', () => {
     fetchMock
       .mockResolvedValueOnce(createResponse({ json: { accent_phrases: [] } }))
       .mockResolvedValueOnce(createResponse({ ok: false, status: 503, text: 'unavailable' }))
-    const client = new VoicevoxClient({ endpoint: 'http://localhost:50021', speakerId: 1 })
+    const client = new VoicevoxClient({ endpoint: 'http://localhost:50021' })
 
-    await expect(client.synthesize('test', '/tmp/out.wav')).rejects.toThrow(
+    await expect(client.synthesize('test', '/tmp/out.wav', { speakerId: 1 })).rejects.toThrow(
       'VOICEVOX synthesis に失敗しました (503): unavailable'
     )
   })
@@ -69,9 +69,9 @@ describe('VoicevoxClient', () => {
           contentType: 'audio/wav',
         })
       )
-    const client = new VoicevoxClient({ endpoint: 'http://localhost:50021', speakerId: 1 })
+    const client = new VoicevoxClient({ endpoint: 'http://localhost:50021' })
 
-    await client.synthesize('こんにちは', '/tmp/out.wav')
+    await client.synthesize('こんにちは', '/tmp/out.wav', { speakerId: 1 })
 
     expect(fs.writeFile).toHaveBeenCalledWith('/tmp/out.wav', expect.any(Buffer))
   })
@@ -93,9 +93,9 @@ describe('VoicevoxClient', () => {
       )
       .mockResolvedValueOnce(createResponse({ arrayBuffer: new ArrayBuffer(4) }))
 
-    const client = new VoicevoxClient({ endpoint: 'http://localhost:50021', speakerId: 5 })
+    const client = new VoicevoxClient({ endpoint: 'http://localhost:50021' })
 
-    await client.synthesize('テスト', '/tmp/out.wav')
+    await client.synthesize('テスト', '/tmp/out.wav', { speakerId: 5 })
 
     const synthesizedPayload = JSON.parse((fetchMock.mock.calls[1]?.[1]?.body as string) ?? '{}')
     expect(synthesizedPayload).toMatchObject({
@@ -123,6 +123,9 @@ describe('VoicevoxClient', () => {
 
     const client = new VoicevoxClient({
       endpoint: 'http://localhost:50021',
+    })
+
+    await client.synthesize('テスト', '/tmp/out.wav', {
       speakerId: 7,
       speedScale: 1.5,
       pitchScale: -0.3,
@@ -131,8 +134,6 @@ describe('VoicevoxClient', () => {
       outputSamplingRate: 44100,
       outputStereo: true,
     })
-
-    await client.synthesize('テスト', '/tmp/out.wav')
 
     const synthCall = fetchMock.mock.calls[1]
     expect(synthCall[0]).toBe('http://localhost:50021/synthesis?speaker=7')
