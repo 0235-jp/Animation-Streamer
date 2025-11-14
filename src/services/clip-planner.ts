@@ -309,6 +309,9 @@ export class ClipPlanner {
 
   private async buildTransitionClip(motion: ResolvedTransitionMotion): Promise<ClipSource> {
     const durationMs = await this.mediaPipeline.getVideoDurationMs(motion.absolutePath)
+    if (durationMs <= EPSILON_MS) {
+      throw new Error(`トランジションモーション ${motion.id} の長さが短すぎます`)
+    }
     return {
       id: motion.id,
       path: motion.absolutePath,

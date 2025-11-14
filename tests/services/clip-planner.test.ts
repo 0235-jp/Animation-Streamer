@@ -20,12 +20,13 @@ describe('ClipPlanner timeline generation', () => {
   let clipPlanner: ClipPlanner
   let config: ResolvedConfig
   let character: ResolvedConfig['characters'][number]
+  let durations: Map<string, number>
 
   beforeAll(async () => {
     const configPath = path.resolve(process.cwd(), 'config/example.stream-profile.json')
     config = await loadConfig(configPath)
     character = config.characters[0]
-    const durations = new Map<string, number>()
+    durations = new Map<string, number>()
     const register = (assetPath?: string, fallback = 1200) => {
       if (assetPath && !durations.has(assetPath)) {
         durations.set(assetPath, fallback)
@@ -90,6 +91,30 @@ describe('ClipPlanner timeline generation', () => {
 
     expect(plan.clips).toHaveLength(1)
     expect(plan.totalDurationMs).toBeGreaterThan(0)
+  })
+
+  it('throws when transition clips are too short', async () => {
+    const enterTransition = character.speechTransitions?.enter?.[0]
+    expect(enterTransition).toBeDefined()
+    if (!enterTransition) return
+
+    const originalDuration = durations.get(enterTransition.absolutePath)
+    durations.set(enterTransition.absolutePath, 0)
+    try {
+      await expect(
+        clipPlanner.buildSpeechPlan(
+          character.id,
+          enterTransition.emotion ?? 'neutral',
+          1000
+        )
+      ).rejects.toThrow(`トランジションモーション ${enterTransition.id} の長さが短すぎます`)
+    } finally {
+      if (originalDuration !== undefined) {
+        durations.set(enterTransition.absolutePath, originalDuration)
+      } else {
+        durations.delete(enterTransition.absolutePath)
+      }
+    }
   })
 
   it('builds action clip timelines using the original video duration', async () => {
