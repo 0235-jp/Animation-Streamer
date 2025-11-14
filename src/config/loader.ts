@@ -58,16 +58,20 @@ export interface ResolvedAudioProfile {
   voices: VoicevoxVoiceProfile[]
 }
 
-export interface ResolvedConfig
-  extends Omit<
-    StreamerConfig,
-    'actions' | 'idleMotions' | 'speechMotions' | 'speechTransitions' | 'assets' | 'audioProfile'
-  > {
+export interface ResolvedCharacter {
+  id: string
+  displayName?: string
   actions: ResolvedAction[]
+  actionsMap: Map<string, ResolvedAction>
   idleMotions: ResolvedIdlePools
   speechMotions: ResolvedSpeechPools
   speechTransitions?: ResolvedSpeechTransitions
   audioProfile: ResolvedAudioProfile
+}
+
+export interface ResolvedConfig extends Omit<StreamerConfig, 'characters' | 'assets'> {
+  characters: ResolvedCharacter[]
+  characterMap: Map<string, ResolvedCharacter>
   assets: {
     tempDir: string
     absoluteTempDir: string
@@ -81,19 +85,46 @@ export const loadConfig = async (configPath: string): Promise<ResolvedConfig> =>
   const baseDir = path.dirname(configPath)
   const resolveAssetPath = (assetPath: string) => path.resolve(baseDir, assetPath)
 
-  const actions: ResolvedAction[] = parsed.actions.map((action) => ({
+  const characters = parsed.characters.map((character) => resolveCharacter(character, resolveAssetPath))
+  const characterMap = new Map<string, ResolvedCharacter>()
+  for (const character of characters) {
+    if (characterMap.has(character.id)) {
+      throw new Error(`Duplicate character id detected: ${character.id}`)
+    }
+    characterMap.set(character.id, character)
+  }
+
+  const absoluteTempDir = path.resolve(baseDir, parsed.assets.tempDir)
+  await fs.mkdir(absoluteTempDir, { recursive: true })
+
+  return {
+    server: parsed.server,
+    characters,
+    characterMap,
+    assets: {
+      tempDir: parsed.assets.tempDir,
+      absoluteTempDir,
+    },
+  }
+}
+
+const resolveCharacter = (
+  character: StreamerConfig['characters'][number],
+  resolveAssetPath: (assetPath: string) => string
+): ResolvedCharacter => {
+  const actions: ResolvedAction[] = character.actions.map((action) => ({
     ...action,
     absolutePath: resolveAssetPath(action.path),
   }))
 
   const idleMotions: ResolvedIdlePools = {
-    large: parsed.idleMotions.large.map((motion) => ({
+    large: character.idleMotions.large.map((motion) => ({
       ...motion,
       type: 'large' as const,
       emotion: motion.emotion.toLowerCase(),
       absolutePath: resolveAssetPath(motion.path),
     })),
-    small: parsed.idleMotions.small.map((motion) => ({
+    small: character.idleMotions.small.map((motion) => ({
       ...motion,
       type: 'small' as const,
       emotion: motion.emotion.toLowerCase(),
@@ -102,13 +133,13 @@ export const loadConfig = async (configPath: string): Promise<ResolvedConfig> =>
   }
 
   const speechMotions: ResolvedSpeechPools = {
-    large: parsed.speechMotions.large.map((motion) => ({
+    large: character.speechMotions.large.map((motion) => ({
       ...motion,
       type: 'large' as const,
       emotion: motion.emotion.toLowerCase(),
       absolutePath: resolveAssetPath(motion.path),
     })),
-    small: parsed.speechMotions.small.map((motion) => ({
+    small: character.speechMotions.small.map((motion) => ({
       ...motion,
       type: 'small' as const,
       emotion: motion.emotion.toLowerCase(),
@@ -130,10 +161,10 @@ export const loadConfig = async (configPath: string): Promise<ResolvedConfig> =>
     return list.map(normalizeTransition)
   }
 
-  const speechTransitions: ResolvedSpeechTransitions | undefined = parsed.speechTransitions
+  const speechTransitions: ResolvedSpeechTransitions | undefined = character.speechTransitions
     ? {
-        enter: toTransitionList(parsed.speechTransitions.enter),
-        exit: toTransitionList(parsed.speechTransitions.exit),
+        enter: toTransitionList(character.speechTransitions.enter),
+        exit: toTransitionList(character.speechTransitions.exit),
       }
     : undefined
 
@@ -145,35 +176,32 @@ export const loadConfig = async (configPath: string): Promise<ResolvedConfig> =>
 
   const defaultVoice = normalizeVoice({
     emotion: 'neutral',
-    speakerId: parsed.audioProfile.speakerId,
-    speedScale: parsed.audioProfile.speedScale,
-    pitchScale: parsed.audioProfile.pitchScale,
-    intonationScale: parsed.audioProfile.intonationScale,
-    volumeScale: parsed.audioProfile.volumeScale,
-    outputSamplingRate: parsed.audioProfile.outputSamplingRate,
-    outputStereo: parsed.audioProfile.outputStereo,
+    speakerId: character.audioProfile.speakerId,
+    speedScale: character.audioProfile.speedScale,
+    pitchScale: character.audioProfile.pitchScale,
+    intonationScale: character.audioProfile.intonationScale,
+    volumeScale: character.audioProfile.volumeScale,
+    outputSamplingRate: character.audioProfile.outputSamplingRate,
+    outputStereo: character.audioProfile.outputStereo,
   })
 
-  const voices = (parsed.audioProfile.voices ?? []).map(normalizeVoice)
+  const voices = (character.audioProfile.voices ?? []).map(normalizeVoice)
 
-  const absoluteTempDir = path.resolve(baseDir, parsed.assets.tempDir)
-  await fs.mkdir(absoluteTempDir, { recursive: true })
+  const actionsMap = new Map(actions.map((action) => [action.id.toLowerCase(), action]))
 
   return {
-    ...parsed,
+    id: character.id,
+    displayName: character.displayName,
     actions,
+    actionsMap,
     idleMotions,
     speechMotions,
     speechTransitions,
     audioProfile: {
-      ttsEngine: parsed.audioProfile.ttsEngine,
-      voicevoxUrl: parsed.audioProfile.voicevoxUrl,
+      ttsEngine: character.audioProfile.ttsEngine,
+      voicevoxUrl: character.audioProfile.voicevoxUrl,
       defaultVoice,
       voices,
-    },
-    assets: {
-      tempDir: parsed.assets.tempDir,
-      absoluteTempDir,
     },
   }
 }

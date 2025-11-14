@@ -27,7 +27,7 @@ describe('createGenerationRouter', () => {
 
     const response = await request(app)
       .post('/api/generate')
-      .send({ stream: false, debug: true, requests: [{ action: 'speak', params: { text: 'hello' } }] })
+      .send({ characterId: 'anchor-a', stream: false, debug: true, requests: [{ action: 'speak', params: { text: 'hello' } }] })
 
     expect(response.status).toBe(200)
     expect(response.body).toEqual({ outputPath: '/tmp/out.mp4', durationMs: 2000, motionIds: ['a', 'b'] })
@@ -51,7 +51,7 @@ describe('createGenerationRouter', () => {
 
     const response = await request(app)
       .post('/api/generate')
-      .send({ requests: [{ action: 'idle', params: { durationMs: 500 } }] })
+      .send({ characterId: 'anchor-a', requests: [{ action: 'idle', params: { durationMs: 500 } }] })
 
     expect(response.status).toBe(422)
     expect(response.body).toEqual({ message: 'bad request', id: '1' })
@@ -72,7 +72,7 @@ describe('createGenerationRouter', () => {
 
     const response = await request(app)
       .post('/api/generate')
-      .send({ stream: true, debug: true, requests: [{ action: 'idle', params: { durationMs: 300 } }] })
+      .send({ characterId: 'anchor-a', stream: true, debug: true, requests: [{ action: 'idle', params: { durationMs: 300 } }] })
 
     expect(response.status).toBe(200)
     expect(response.text).toContain('"type":"result"')
@@ -87,7 +87,7 @@ describe('createGenerationRouter', () => {
 
     const response = await request(app)
       .post('/api/generate')
-      .send({ stream: true, requests: [{ action: 'idle', params: { durationMs: 100 } }] })
+      .send({ characterId: 'anchor-a', stream: true, requests: [{ action: 'idle', params: { durationMs: 100 } }] })
 
     expect(response.status).toBe(200)
     expect(response.text).toContain('"type":"error"')
@@ -101,7 +101,7 @@ describe('createGenerationRouter', () => {
 
     const response = await request(app)
       .post('/api/generate')
-      .send({ requests: [{ action: 'idle', params: { durationMs: 200 } }] })
+      .send({ characterId: 'anchor-a', requests: [{ action: 'idle', params: { durationMs: 200 } }] })
 
     expect(response.status).toBe(500)
     expect(response.body).toEqual({ message: 'Internal Server Error' })
@@ -114,7 +114,7 @@ describe('createGenerationRouter', () => {
 
     const response = await request(app)
       .post('/api/generate')
-      .send({ stream: true, requests: [{ action: 'idle', params: { durationMs: 100 } }] })
+      .send({ characterId: 'anchor-a', stream: true, requests: [{ action: 'idle', params: { durationMs: 100 } }] })
 
     expect(response.status).toBe(200)
     expect(response.text).toContain('"type":"error"')
@@ -127,7 +127,7 @@ describe('createGenerationRouter', () => {
 
     const response = await request(app)
       .post('/api/generate')
-      .send({ requests: [{ action: 'idle', params: { durationMs: 200 } }] })
+      .send({ characterId: 'anchor-a', requests: [{ action: 'idle', params: { durationMs: 200 } }] })
 
     expect(response.status).toBe(401)
     expect(response.body).toEqual({ message: 'Invalid API key' })
@@ -141,7 +141,7 @@ describe('createGenerationRouter', () => {
     const response = await request(app)
       .post('/api/generate')
       .set('X-API-Key', 'invalid')
-      .send({ requests: [{ action: 'idle', params: { durationMs: 200 } }] })
+      .send({ characterId: 'anchor-a', requests: [{ action: 'idle', params: { durationMs: 200 } }] })
 
     expect(response.status).toBe(401)
     expect(response.body).toEqual({ message: 'Invalid API key' })
@@ -157,7 +157,7 @@ describe('createGenerationRouter', () => {
     const response = await request(app)
       .post('/api/generate')
       .set('X-API-Key', 'secret')
-      .send({ stream: false, debug: false, requests: [{ action: 'idle', params: { durationMs: 200 } }] })
+      .send({ characterId: 'anchor-a', stream: false, debug: false, requests: [{ action: 'idle', params: { durationMs: 200 } }] })
 
     expect(response.status).toBe(200)
   })

@@ -27,8 +27,9 @@ curl -X POST http://localhost:4000/api/generate \
   -d '{
     "stream": false,
     "debug": true,
+    "characterId": "anchor-a",
     "requests": [
-      { "action": "start"} ,
+      { "action": "start" },
       { "action": "speak", "params": { "text": "こんにちは", "emotion": "happy" } },
       { "action": "idle", "params": { "durationMs": 2000 } },
       { "action": "speak", "params": { "text": "さようなら" } }
@@ -36,38 +37,21 @@ curl -X POST http://localhost:4000/api/generate \
   }'
 ```
 
-`stream=false` の場合は `combined.outputPath` に 1 本にまとめたMP4パスが返却されます。 `stream=true` を指定すると各アクション完了ごとに NDJSON でレスポンスがストリーミングされます。
-
+`stream=false` の場合は `combined.outputPath` に 1 本にまとめたMP4パスが返却されます。 `stream=true` を指定すると各アクション完了ごとに NDJSON でレスポンスがストリーミングされます。  
+`characterId` はリクエスト直下で **必須** 指定です（すべてのアクションが同一キャラクターを参照します）。  
 `server.apiKey` を設定した場合は `-H 'X-API-Key: <your-key>'` を付与してください。
 
-## 設定
-`config/stream-profile.json` でモーション動画やVOICEVOXエンドポイントなどを定義します。詳細は以下の通り。
 
-- server.port: HTTP API/Swagger UI が待ち受けるポート番号で、ローカル開発時は 4000 を想定しています。
-- server.host: API がバインドするホスト名/アドレスで、未指定時は `localhost` のみからアクセスできます。LAN 越しに公開する場合は `0.0.0.0` などに変更してください。
-- server.apiKey (任意): API キーを設定すると `/api/*` エンドポイントへのアクセスに `X-API-Key` ヘッダーが必須になります。未設定の場合は認証なしでアクセスできます。
-- actions: `generate` API の `action` リクエストで再生できる単発モーション群で、`speak`/`idle` は予約語のため使用できません。
-  - id: API から参照する識別子で、`requests[].action` に指定します。
-  - path: 再生する動画の相対/絶対パスで、ffmpeg がアクセスできるローカルファイルを指します。
-- idleMotions: 待機中にループ再生されるモーションプールで、感情(`emotion`)とサイズ(`large`/`small`)でフィルタされます。
-  - large: 長尺かつ動きの大きい待機モーションを登録し、プランニング時に優先的に使用されます。
-  - small: 大きさ・長さが足りない部分を埋める短尺待機モーションのプールです。
-  - id: 待機モーション個別の識別子で、APIパラメータから直接指定して再生させることもできます。
-  - emotion: `neutral` などの感情タグで、`requests[].params.emotion` と一致するモーションが優先されます。
-  - path: 各モーション動画のパスで、`actions` と同じく ffmpeg が読める場所を指定します。
-- speechMotions: 発話中に利用するモーションプールで、`large`/`small` と感情ごとに最適な映像を切り替えます。
-  - large: メインとなる発話モーション群で、要求時間をこのプールで可能な限り埋めます。
-  - small: 残り時間の微調整に使う短尺モーション群で、`large` が不足した場合のフォールバックにもなります。
-  - id: 発話モーションの識別子で、ログやデバッグに利用されます。
-  - emotion: 発話リクエストの `emotion` と一致した場合に優先採用され、未指定時は `neutral` が使われます。
-  - path: 発話モーション動画のパスで、`idleMotions` と同様にローカルファイルを指定します。
-- speechTransitions: `speak` アクションの前後に差し込む遷移モーションで、各 `emotion` ごとに複数の候補を登録できます。`speechMotions` と同様に「一致 → neutral → その他」の順で選択されます。
-  - enter: 待機→発話へ切り替える導入モーションの配列です。
-  - exit: 発話→待機に戻す締めモーションの配列です。
-- audioProfile: TTS 用の接続情報をまとめたプロファイルで、現在は VOICEVOX のみサポートします。
-  - ttsEngine: 使用する音声合成エンジン名で、`voicevox` 固定です。
-  - voicevoxUrl: ローカルの VOICEVOX エンジン API エンドポイント URL です。
-  - speakerId: VOICEVOX の話者 ID。ここで指定した値が「neutral」フォールバックとして利用されます。
-  - speedScale / pitchScale / intonationScale / volumeScale / outputSamplingRate / outputStereo (すべて任意): 省略時は VOICEVOX 側のデフォルトを使用します。
-  - voices (任意): 感情ごとに TTS パラメータを上書きする配列。`emotion`・`speakerId` と任意の調整値を指定し、`requests[].params.emotion` が一致した場合にモーションと同じ優先順位（指定感情 → neutral → フォールバック）で選択されます。
+## 設定
+`config/stream-profile.json` でモーション動画や VOICEVOX エンドポイントなどを定義します。主な項目は以下の通りです。
+
+- server.port / server.host / server.apiKey: API の待受ポート・ホスト・APIキー。
+- characters: キャラクターごとの設定配列。最低1件登録し、APIからは `characterId` で参照します。
+  - id / displayName: キャラクター識別子と任意の表示名。
+  - actions: キャラクター固有のカスタムアクション群（`speak`/`idle` は予約語のため不可）。`id` は `requests[].action` に指定し、`path` は再生する動画パスです。
+  - idleMotions / speechMotions: 待機・発話モーションのプール。`large`/`small` と emotion ごとに最適なクリップを選択し、`motionId` で直接指定もできます。
+  - speechTransitions (任意): `speak` の前後に自動で差し込む導入/締めモーション。emotion が一致しない場合は `neutral` → その他の順でフォールバックします。
+  - audioProfile: キャラクター単位の VOICEVOX 接続設定。`voicevoxUrl` や話者 ID、emotion 別の `voices[]` を定義できます。
 - assets.tempDir: 生成処理中の一時的な音声・動画を配置するディレクトリで、起動時に自動作成されます。
+
+`config/example.stream-profile.json` には Anchor A/B の 2 キャラクター例が含まれているので、必要に応じて `characters[]` を増やし、`characterId` を切り替えて利用してください。

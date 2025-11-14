@@ -1,10 +1,9 @@
 import {
   ResolvedAction,
+  ResolvedCharacter,
   ResolvedIdleMotion,
   ResolvedSpeechMotion,
-  type ResolvedIdlePools,
   type ResolvedSpeechPools,
-  type ResolvedSpeechTransitions,
   type ResolvedTransitionMotion,
 } from '../config/loader'
 import type { ClipSource, MediaPipeline } from './media-pipeline'
@@ -28,35 +27,42 @@ const MAX_REPEAT_CLIPS = 1000 // prevent runaway loops when repeating a single c
 
 const normalizeEmotion = (value?: string) => value?.trim().toLowerCase()
 
-export class ClipPlanner {
-  private readonly speechPools: Map<
+interface CharacterClipResources {
+  speechPools: Map<
     string,
     {
       large: ResolvedSpeechMotion[]
       small: ResolvedSpeechMotion[]
     }
   >
-  private readonly idleLarge: ResolvedIdleMotion[]
-  private readonly idleSmall: ResolvedIdleMotion[]
-  private readonly speechEnterTransitions?: Map<string, ResolvedTransitionMotion[]>
-  private readonly speechExitTransitions?: Map<string, ResolvedTransitionMotion[]>
+  idleLarge: ResolvedIdleMotion[]
+  idleSmall: ResolvedIdleMotion[]
+  speechEnterTransitions?: Map<string, ResolvedTransitionMotion[]>
+  speechExitTransitions?: Map<string, ResolvedTransitionMotion[]>
+}
 
-  constructor(
-    private readonly mediaPipeline: MediaPipeline,
-    speechPools: ResolvedSpeechPools,
-    idlePools: ResolvedIdlePools,
-    speechTransitions?: ResolvedSpeechTransitions
-  ) {
-    this.speechPools = this.buildSpeechPools(speechPools)
-    this.idleLarge = idlePools.large
-    this.idleSmall = idlePools.small
-    this.speechEnterTransitions = this.buildTransitionMap(speechTransitions?.enter)
-    this.speechExitTransitions = this.buildTransitionMap(speechTransitions?.exit)
+export class ClipPlanner {
+  private readonly characterResources: Map<string, CharacterClipResources>
+
+  constructor(private readonly mediaPipeline: MediaPipeline, characters: ResolvedCharacter[]) {
+    this.characterResources = new Map(
+      characters.map((character) => [
+        character.id,
+        {
+          speechPools: this.buildSpeechPools(character.speechMotions),
+          idleLarge: character.idleMotions.large,
+          idleSmall: character.idleMotions.small,
+          speechEnterTransitions: this.buildTransitionMap(character.speechTransitions?.enter),
+          speechExitTransitions: this.buildTransitionMap(character.speechTransitions?.exit),
+        },
+      ])
+    )
   }
 
-  async buildSpeechPlan(emotion: string | undefined, durationMs: number): Promise<ClipPlanResult> {
+  async buildSpeechPlan(characterId: string, emotion: string | undefined, durationMs: number): Promise<ClipPlanResult> {
+    const resources = this.getCharacterResources(characterId)
     const normalizedEmotion = normalizeEmotion(emotion)
-    const corePlan = await this.buildSpeechCorePlan(normalizedEmotion, durationMs)
+    const corePlan = await this.buildSpeechCorePlan(resources, normalizedEmotion, durationMs)
 
     const clips = [...corePlan.clips]
     const motionIds = [...corePlan.motionIds]
@@ -64,7 +70,7 @@ export class ClipPlanner {
     let enterDurationMs: number | undefined
     let exitDurationMs: number | undefined
 
-    const enterTransition = this.pickTransitionMotion(this.speechEnterTransitions, normalizedEmotion)
+    const enterTransition = this.pickTransitionMotion(resources.speechEnterTransitions, normalizedEmotion)
     if (enterTransition) {
       const enterClip = await this.buildTransitionClip(enterTransition)
       clips.unshift(enterClip)
@@ -73,7 +79,7 @@ export class ClipPlanner {
       enterDurationMs = enterClip.durationMs
     }
 
-    const exitTransition = this.pickTransitionMotion(this.speechExitTransitions, normalizedEmotion)
+    const exitTransition = this.pickTransitionMotion(resources.speechExitTransitions, normalizedEmotion)
     if (exitTransition) {
       const exitClip = await this.buildTransitionClip(exitTransition)
       clips.push(exitClip)
@@ -92,34 +98,29 @@ export class ClipPlanner {
     }
   }
 
-  private async buildSpeechCorePlan(normalizedEmotion: string | undefined, durationMs: number): Promise<ClipPlanResult> {
-    const pool =
-      (normalizedEmotion && this.speechPools.get(normalizedEmotion)) ??
-      this.speechPools.get('neutral') ??
-      [...this.speechPools.values()][0]
-    if (!pool) {
-      throw new Error('speechMotions が設定されていません')
-    }
-    return this.fillPlan(durationMs, pool.large, pool.small)
-  }
-
-  async buildIdlePlan(durationMs: number, motionId?: string, emotion?: string): Promise<ClipPlanResult> {
+  async buildIdlePlan(
+    characterId: string,
+    durationMs: number,
+    motionId?: string,
+    emotion?: string
+  ): Promise<ClipPlanResult> {
+    const resources = this.getCharacterResources(characterId)
     const normalizedEmotion = normalizeEmotion(emotion)
     if (motionId) {
-      const motion = [...this.idleLarge, ...this.idleSmall].find((m) => m.id === motionId)
+      const motion = [...resources.idleLarge, ...resources.idleSmall].find((m) => m.id === motionId)
       if (!motion) {
         throw new Error(`待機モーション ${motionId} が見つかりません`)
       }
       return this.repeatSingleMotion(motion, durationMs)
     }
     const filteredLarge = normalizedEmotion
-      ? this.idleLarge.filter((motion) => motion.emotion === normalizedEmotion)
-      : this.idleLarge
+      ? resources.idleLarge.filter((motion) => normalizeEmotion(motion.emotion) === normalizedEmotion)
+      : resources.idleLarge
     const filteredSmall = normalizedEmotion
-      ? this.idleSmall.filter((motion) => motion.emotion === normalizedEmotion)
-      : this.idleSmall
-    const fallbackEmotionLarge = filteredLarge.length ? filteredLarge : this.idleLarge
-    const fallbackEmotionSmall = filteredSmall.length ? filteredSmall : this.idleSmall
+      ? resources.idleSmall.filter((motion) => normalizeEmotion(motion.emotion) === normalizedEmotion)
+      : resources.idleSmall
+    const fallbackEmotionLarge = filteredLarge.length ? filteredLarge : resources.idleLarge
+    const fallbackEmotionSmall = filteredSmall.length ? filteredSmall : resources.idleSmall
     return this.fillPlan(durationMs, fallbackEmotionLarge, fallbackEmotionSmall)
   }
 
@@ -135,6 +136,29 @@ export class ClipPlanner {
       totalDurationMs: durationMs,
       motionIds: [action.id],
     }
+  }
+
+  private getCharacterResources(characterId: string): CharacterClipResources {
+    const resources = this.characterResources.get(characterId)
+    if (!resources) {
+      throw new Error(`characterId=${characterId} のモーションが見つかりません`)
+    }
+    return resources
+  }
+
+  private async buildSpeechCorePlan(
+    resources: CharacterClipResources,
+    normalizedEmotion: string | undefined,
+    durationMs: number
+  ): Promise<ClipPlanResult> {
+    const pool =
+      (normalizedEmotion && resources.speechPools.get(normalizedEmotion)) ??
+      resources.speechPools.get('neutral') ??
+      [...resources.speechPools.values()][0]
+    if (!pool) {
+      throw new Error('speechMotions が設定されていません')
+    }
+    return this.fillPlan(durationMs, pool.large, pool.small)
   }
 
   private buildSpeechPools(pools: ResolvedSpeechPools) {
@@ -156,6 +180,22 @@ export class ClipPlanner {
     pools.large.forEach(addMotion)
     pools.small.forEach(addMotion)
     return speechMap
+  }
+
+  private buildTransitionMap(
+    motions: ResolvedTransitionMotion[] | undefined
+  ): Map<string, ResolvedTransitionMotion[]> | undefined {
+    if (!motions?.length) return undefined
+    const map = new Map<string, ResolvedTransitionMotion[]>()
+    for (const motion of motions) {
+      const emotion = motion.emotion ?? 'neutral'
+      const key = normalizeEmotion(emotion) ?? 'neutral'
+      if (!map.has(key)) {
+        map.set(key, [])
+      }
+      map.get(key)!.push(motion)
+    }
+    return map
   }
 
   private async repeatSingleMotion(motion: ResolvedIdleMotion, durationMs: number): Promise<ClipPlanResult> {
@@ -218,25 +258,18 @@ export class ClipPlanner {
       covered += candidate.durationMs
     }
 
-    const ensureFallback = () => {
-      const fallback = this.pickAnyCandidate(largeCandidates) ?? this.pickAnyCandidate(smallCandidates)
-      if (!fallback) {
-        throw new Error('モーションの選択に失敗しました')
-      }
-      plan.push({
-        id: fallback.motion.id,
-        path: fallback.motion.absolutePath,
-        durationMs: fallback.durationMs,
-      })
-      covered += fallback.durationMs
-    }
-
+    // targetDurationMs が極端に短い場合、while ループを一度も通らずにここまで到達しうる。
     if (!plan.length) {
-      ensureFallback()
-    }
-    while (covered + EPSILON_MS < targetDurationMs) {
-      ensureFallback()
-      if (plan.length > maxIterations) break
+      const fallback =
+        this.pickAnyCandidate(smallCandidates) ?? this.pickAnyCandidate(largeCandidates)
+      if (fallback) {
+        plan.push({
+          id: fallback.motion.id,
+          path: fallback.motion.absolutePath,
+          durationMs: fallback.durationMs,
+        })
+        covered += fallback.durationMs
+      }
     }
 
     return {
@@ -247,29 +280,31 @@ export class ClipPlanner {
   }
 
   private async buildCandidates(motions: ResolvedIdleMotion[]): Promise<ClipCandidate[]> {
-    return Promise.all(
-      motions.map(async (motion) => {
+    const candidates: ClipCandidate[] = []
+    for (const motion of motions) {
+      try {
         const durationMs = await this.mediaPipeline.getVideoDurationMs(motion.absolutePath)
-        if (durationMs <= 0) {
-          throw new Error(`モーション ${motion.id} の長さが取得できませんでした`)
+        if (durationMs > EPSILON_MS) {
+          candidates.push({ motion, durationMs })
         }
-        return {
-          motion,
-          durationMs,
-        }
-      })
-    )
+      } catch {
+        // skip motions that fail to probe
+      }
+    }
+    return candidates
   }
 
-  private pickCandidate(candidates: ClipCandidate[], remainingMs: number): ClipCandidate | null {
-    const filtered = candidates.filter((candidate) => candidate.durationMs <= remainingMs + EPSILON_MS)
-    if (!filtered.length) return null
-    return filtered[Math.floor(Math.random() * filtered.length)]
+  private pickCandidate(candidates: ClipCandidate[], remainingDuration: number): ClipCandidate | undefined {
+    const valid = candidates.filter((candidate) => candidate.durationMs <= remainingDuration + EPSILON_MS)
+    if (!valid.length) return undefined
+    const index = Math.floor(Math.random() * valid.length)
+    return valid[index]
   }
 
-  private pickAnyCandidate(candidates: ClipCandidate[]): ClipCandidate | null {
-    if (!candidates.length) return null
-    return candidates[Math.floor(Math.random() * candidates.length)]
+  private pickAnyCandidate(candidates: ClipCandidate[]): ClipCandidate | undefined {
+    if (!candidates.length) return undefined
+    const index = Math.floor(Math.random() * candidates.length)
+    return candidates[index]
   }
 
   private async buildTransitionClip(motion: ResolvedTransitionMotion): Promise<ClipSource> {
@@ -284,34 +319,17 @@ export class ClipPlanner {
     }
   }
 
-  private buildTransitionMap(motions?: ResolvedTransitionMotion[]): Map<string, ResolvedTransitionMotion[]> | undefined {
-    if (!motions?.length) return undefined
-    const map = new Map<string, ResolvedTransitionMotion[]>()
-    for (const motion of motions) {
-      const emotion = normalizeEmotion(motion.emotion) ?? 'neutral'
-      if (!map.has(emotion)) {
-        map.set(emotion, [])
-      }
-      map.get(emotion)!.push(motion)
-    }
-    return map
-  }
-
   private pickTransitionMotion(
-    map: Map<string, ResolvedTransitionMotion[]> | undefined,
-    targetEmotion?: string | null
+    transitions: Map<string, ResolvedTransitionMotion[]> | undefined,
+    emotion: string | undefined
   ): ResolvedTransitionMotion | undefined {
-    if (!map) return undefined
-    const normalizedTarget = targetEmotion ?? undefined
-    if (normalizedTarget) {
-      const motions = map.get(normalizedTarget)
-      if (motions?.length) return motions[0]
+    if (!transitions) return undefined
+    if (emotion && transitions.has(emotion)) {
+      return transitions.get(emotion)?.[0]
     }
-    const neutralMotions = map.get('neutral')
-    if (neutralMotions?.length) return neutralMotions[0]
-    for (const motions of map.values()) {
-      if (motions.length) return motions[0]
+    if (transitions.has('neutral')) {
+      return transitions.get('neutral')?.[0]
     }
-    return undefined
+    return [...transitions.values()][0]?.[0]
   }
 }

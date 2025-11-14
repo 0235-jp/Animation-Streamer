@@ -1,7 +1,9 @@
 import path from 'node:path'
 import type {
-  ResolvedConfig,
   ResolvedAction,
+  ResolvedAudioProfile,
+  ResolvedCharacter,
+  ResolvedConfig,
   ResolvedIdleMotion,
   ResolvedSpeechMotion,
   ResolvedSpeechTransitions,
@@ -69,89 +71,85 @@ const baseTransitions: ResolvedSpeechTransitions = {
   ],
 }
 
-const baseConfig: ResolvedConfig = {
-  server: { port: 4000 },
-  actions: [baseAction],
-  idleMotions: {
-    large: [baseIdleLarge],
-    small: [baseIdleSmall],
+const baseAudioProfile: ResolvedAudioProfile = {
+  ttsEngine: 'voicevox',
+  voicevoxUrl: 'http://127.0.0.1:50021',
+  defaultVoice: {
+    emotion: 'neutral',
+    speakerId: 1,
+    speedScale: 1,
+    pitchScale: 0,
+    intonationScale: 1,
+    volumeScale: 1,
+    outputSamplingRate: 24000,
+    outputStereo: false,
   },
-  speechMotions: {
-    large: [baseSpeechLarge],
-    small: [baseSpeechSmall],
-  },
-  speechTransitions: baseTransitions,
-  audioProfile: {
-    ttsEngine: 'voicevox',
-    voicevoxUrl: 'http://127.0.0.1:50021',
-    defaultVoice: {
+  voices: [
+    {
       emotion: 'neutral',
       speakerId: 1,
-      speedScale: 1,
-      pitchScale: 0,
-      intonationScale: 1,
-      volumeScale: 1,
-      outputSamplingRate: 24000,
-      outputStereo: false,
+      speedScale: 1.05,
     },
-    voices: [
-      {
-        emotion: 'neutral',
-        speakerId: 1,
-        speedScale: 1.05,
-      },
-      {
-        emotion: 'happy',
-        speakerId: 2,
-        pitchScale: 0.2,
-      },
-    ],
-  },
-  assets: {
-    tempDir: './tmp',
-    absoluteTempDir: assetsDir,
-  },
+    {
+      emotion: 'happy',
+      speakerId: 2,
+      pitchScale: 0.2,
+    },
+  ],
 }
 
-const cloneConfig = (): ResolvedConfig => ({
-  server: { ...baseConfig.server },
-  actions: baseConfig.actions.map((action) => ({ ...action })),
-  idleMotions: {
-    large: baseConfig.idleMotions.large.map((motion) => ({ ...motion })),
-    small: baseConfig.idleMotions.small.map((motion) => ({ ...motion })),
-  },
-  speechMotions: {
-    large: baseConfig.speechMotions.large.map((motion) => ({ ...motion })),
-    small: baseConfig.speechMotions.small.map((motion) => ({ ...motion })),
-  },
-  speechTransitions: baseConfig.speechTransitions && {
-    enter: baseConfig.speechTransitions.enter
-      ? baseConfig.speechTransitions.enter.map((motion) => ({ ...motion }))
-      : undefined,
-    exit: baseConfig.speechTransitions.exit
-      ? baseConfig.speechTransitions.exit.map((motion) => ({ ...motion }))
-      : undefined,
-  },
-  audioProfile: {
-    ...baseConfig.audioProfile,
-    defaultVoice: { ...baseConfig.audioProfile.defaultVoice },
-    voices: baseConfig.audioProfile.voices.map((voice) => ({ ...voice })),
-  },
-  assets: { ...baseConfig.assets },
-})
+const createCharacter = (): ResolvedCharacter => {
+  const actions: ResolvedAction[] = [baseAction].map((action) => ({ ...action }))
+  const actionsMap = new Map(actions.map((action) => [action.id.toLowerCase(), action]))
+  return {
+    id: 'anchor-a',
+    displayName: 'Anchor A',
+    actions,
+    actionsMap,
+    idleMotions: {
+      large: [baseIdleLarge].map((motion) => ({ ...motion })),
+      small: [baseIdleSmall].map((motion) => ({ ...motion })),
+    },
+    speechMotions: {
+      large: [baseSpeechLarge].map((motion) => ({ ...motion })),
+      small: [baseSpeechSmall].map((motion) => ({ ...motion })),
+    },
+    speechTransitions: {
+      enter: baseTransitions.enter?.map((motion) => ({ ...motion })),
+      exit: baseTransitions.exit?.map((motion) => ({ ...motion })),
+    },
+    audioProfile: {
+      ...baseAudioProfile,
+      defaultVoice: { ...baseAudioProfile.defaultVoice },
+      voices: baseAudioProfile.voices.map((voice) => ({ ...voice })),
+    },
+  }
+}
+
+const cloneConfig = (): ResolvedConfig => {
+  const characters = [createCharacter()]
+  return {
+    server: { port: 4000 },
+    characters,
+    characterMap: new Map(characters.map((character) => [character.id, character])),
+    assets: {
+      tempDir: './tmp',
+      absoluteTempDir: assetsDir,
+    },
+  }
+}
 
 export const createResolvedConfig = (overrides?: Partial<ResolvedConfig>): ResolvedConfig => {
   const config = cloneConfig()
   if (!overrides) return config
-  return {
+  const merged: ResolvedConfig = {
     ...config,
     ...overrides,
     server: overrides.server ?? config.server,
-    actions: overrides.actions ?? config.actions,
-    idleMotions: overrides.idleMotions ?? config.idleMotions,
-    speechMotions: overrides.speechMotions ?? config.speechMotions,
-    speechTransitions: overrides.speechTransitions ?? config.speechTransitions,
-    audioProfile: overrides.audioProfile ?? config.audioProfile,
+    characters: overrides.characters ?? config.characters,
     assets: overrides.assets ?? config.assets,
   }
+  merged.characterMap =
+    overrides.characterMap ?? new Map(merged.characters.map((character) => [character.id, character]))
+  return merged
 }

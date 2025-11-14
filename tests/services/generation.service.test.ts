@@ -33,6 +33,8 @@ const createClipPlan = (overrides?: Partial<ClipPlanResult>): ClipPlanResult => 
   ...overrides,
 })
 
+const DEFAULT_CHARACTER_ID = 'anchor-a'
+
 const createService = (configOverride?: ResolvedConfig) => {
   const clipPlanner = {
     buildSpeechPlan: vi.fn().mockResolvedValue(createClipPlan({ talkDurationMs: 900, enterDurationMs: 100, exitDurationMs: 100 })),
@@ -73,6 +75,13 @@ const createService = (configOverride?: ResolvedConfig) => {
   return { service, clipPlanner, mediaPipeline, voicevox, config }
 }
 
+const withCharacter = (
+  payload: Omit<GenerateRequestPayload, 'characterId'> & { characterId?: string }
+): GenerateRequestPayload => ({
+  characterId: payload.characterId ?? DEFAULT_CHARACTER_ID,
+  ...payload,
+})
+
 describe('GenerationService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -81,13 +90,13 @@ describe('GenerationService', () => {
 
   it('returns combined batch result for non-stream payloads', async () => {
     const { service, clipPlanner, mediaPipeline, voicevox } = createService()
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       stream: false,
       requests: [
         { action: 'speak', params: { text: 'こんにちは' } },
         { action: 'idle', params: { durationMs: 500 } },
       ],
-    }
+    })
 
     const result = await service.processBatch(payload)
 
@@ -99,7 +108,8 @@ describe('GenerationService', () => {
     expect(voicevox.synthesize).toHaveBeenCalledWith(
       'こんにちは',
       expect.stringContaining('voice-1.wav'),
-      expect.objectContaining({ speakerId: 1 })
+      expect.objectContaining({ speakerId: 1 }),
+      expect.objectContaining({ endpoint: 'http://127.0.0.1:50021' })
     )
     expect(mediaPipeline.concatAudioFiles).toHaveBeenCalled()
     expect(mediaPipeline.compose).toHaveBeenCalledTimes(1)
@@ -107,24 +117,25 @@ describe('GenerationService', () => {
 
   it('selects emotion-specific TTS profile when available', async () => {
     const { service, voicevox } = createService()
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       stream: false,
       requests: [{ action: 'speak', params: { text: 'やっほー', emotion: 'happy' } }],
-    }
+    })
 
     await service.processBatch(payload)
 
     expect(voicevox.synthesize).toHaveBeenCalledWith(
       'やっほー',
       expect.any(String),
-      expect.objectContaining({ speakerId: 2, pitchScale: 0.2 })
+      expect.objectContaining({ speakerId: 2, pitchScale: 0.2 }),
+      expect.objectContaining({ endpoint: 'http://127.0.0.1:50021' })
     )
   })
 
   it('falls back to default TTS profile when emotion and neutral overrides are unavailable', async () => {
     const customConfig = createResolvedConfig()
-    customConfig.audioProfile = {
-      ...customConfig.audioProfile,
+    customConfig.characters[0].audioProfile = {
+      ...customConfig.characters[0].audioProfile,
       voices: [
         {
           emotion: 'sad',
@@ -138,30 +149,32 @@ describe('GenerationService', () => {
         volumeScale: 0.7,
       },
     }
+    customConfig.characterMap.set(customConfig.characters[0].id, customConfig.characters[0])
     const { service, voicevox } = createService(customConfig)
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       stream: false,
       requests: [{ action: 'speak', params: { text: 'fallback test', emotion: 'angry' } }],
-    }
+    })
 
     await service.processBatch(payload)
 
     expect(voicevox.synthesize).toHaveBeenCalledWith(
       'fallback test',
       expect.any(String),
-      expect.objectContaining({ speakerId: 9, volumeScale: 0.7 })
+      expect.objectContaining({ speakerId: 9, volumeScale: 0.7 }),
+      expect.objectContaining({ endpoint: 'http://127.0.0.1:50021' })
     )
   })
 
   it('includes aggregated motionIds in combined result when debug flag is true', async () => {
     const { service } = createService()
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       debug: true,
       requests: [
         { action: 'speak', params: { text: 'clip' } },
         { action: 'idle', params: { durationMs: 400 } },
       ],
-    }
+    })
 
     const result = await service.processBatch(payload)
 
@@ -172,10 +185,10 @@ describe('GenerationService', () => {
   it('streams action results when stream=true and invokes handler callbacks', async () => {
     const { service } = createService()
     const handler = { onResult: vi.fn() }
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       stream: true,
       requests: [{ action: 'idle', params: { durationMs: 400 } }],
-    }
+    })
 
     const result = (await service.processBatch(payload, handler)) as { kind: 'stream'; results: ActionResult[] }
 
@@ -188,11 +201,11 @@ describe('GenerationService', () => {
 
   it('exposes motionIds for streaming results when debug flag is true', async () => {
     const { service } = createService()
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       stream: true,
       debug: true,
       requests: [{ action: 'idle', params: { durationMs: 400 } }],
-    }
+    })
 
     const result = (await service.processBatch(payload)) as { kind: 'stream'; results: ActionResult[] }
 
@@ -201,9 +214,9 @@ describe('GenerationService', () => {
 
   it('pads speech audio with silent segments when transitions are present', async () => {
     const { service, mediaPipeline } = createService()
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       requests: [{ action: 'speak', params: { text: 'transition test' } }],
-    }
+    })
 
     await service.processBatch(payload)
 
@@ -215,9 +228,9 @@ describe('GenerationService', () => {
 
   it('trims normalized audio before measuring duration and fitting talk segments', async () => {
     const { service, mediaPipeline } = createService()
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       requests: [{ action: 'speak', params: { text: 'trim me' } }],
-    }
+    })
 
     mediaPipeline.getAudioDurationMs.mockResolvedValueOnce(1100)
 
@@ -237,10 +250,10 @@ describe('GenerationService', () => {
     const { service, voicevox } = createService()
     voicevox.synthesize.mockRejectedValue(new Error('VOICEVOX failure'))
 
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       stream: true,
       requests: [{ action: 'speak', params: { text: 'error' } }],
-    }
+    })
 
     await expect(service.processBatch(payload)).rejects.toMatchObject({
       message: 'VOICEVOX failure',
@@ -253,9 +266,9 @@ describe('GenerationService', () => {
     const { service, clipPlanner, mediaPipeline } = createService()
     clipPlanner.buildSpeechPlan.mockRejectedValue(new Error('bad plan'))
 
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       requests: [{ action: 'speak', params: { text: 'hello' } }],
-    }
+    })
 
     await expect(service.processBatch(payload)).rejects.toBeInstanceOf(ActionProcessingError)
     expect(mediaPipeline.removeJobDir).toHaveBeenCalledWith('/tmp/job')
@@ -263,12 +276,12 @@ describe('GenerationService', () => {
 
   it('throws ActionProcessingError for undefined custom actions', async () => {
     const { service } = createService()
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       requests: [{ action: 'wave' }],
-    }
+    })
 
     await expect(service.processBatch(payload)).rejects.toMatchObject({
-      message: expect.stringContaining('未定義のアクションです'),
+      message: expect.stringContaining('characterId=anchor-a'),
       statusCode: 400,
     })
   })
@@ -277,9 +290,9 @@ describe('GenerationService', () => {
     const { service, mediaPipeline } = createService()
     mediaPipeline.extractAudioTrack.mockRejectedValue(new NoAudioTrackError('/tmp/action.mp4'))
 
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       requests: [{ action: 'start' }],
-    }
+    })
 
     const result = await service.processBatch(payload)
 
@@ -289,10 +302,10 @@ describe('GenerationService', () => {
 
   it('validates speak params and surfaces ActionProcessingError when text is missing', async () => {
     const { service } = createService()
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       stream: false,
       requests: [{ action: 'speak', params: {} }],
-    }
+    })
 
     await expect(service.processBatch(payload)).rejects.toMatchObject({
       message: expect.stringContaining('text は必須です'),
@@ -302,9 +315,9 @@ describe('GenerationService', () => {
 
   it('validates idle params and rejects non-positive duration', async () => {
     const { service } = createService()
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       requests: [{ action: 'idle', params: { durationMs: 0 } }],
-    }
+    })
 
     await expect(service.processBatch(payload)).rejects.toMatchObject({
       message: expect.stringContaining('durationMs は正の数値で指定してください'),
@@ -314,37 +327,37 @@ describe('GenerationService', () => {
 
   it('applies defaults for idle motion id when params omit overrides', async () => {
     const { service, clipPlanner } = createService()
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       defaults: { idleMotionId: 'idle-large' },
       requests: [{ action: 'idle', params: { durationMs: 700 } }],
-    }
+    })
 
     await service.processBatch(payload)
 
-    expect(clipPlanner.buildIdlePlan).toHaveBeenCalledWith(expect.any(Number), 'idle-large', undefined)
+    expect(clipPlanner.buildIdlePlan).toHaveBeenCalledWith(DEFAULT_CHARACTER_ID, expect.any(Number), 'idle-large', undefined)
   })
 
   it('uses defaults emotion for speak actions when params omit emotion', async () => {
     const { service, clipPlanner } = createService()
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       defaults: { emotion: 'happy' },
       requests: [{ action: 'speak', params: { text: 'default emotion' } }],
-    }
+    })
 
     await service.processBatch(payload)
 
-    expect(clipPlanner.buildSpeechPlan).toHaveBeenCalledWith('happy', expect.any(Number))
+    expect(clipPlanner.buildSpeechPlan).toHaveBeenCalledWith(DEFAULT_CHARACTER_ID, 'happy', expect.any(Number))
   })
 
   it('assigns sequential string ids to streaming results', async () => {
     const { service } = createService()
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       stream: true,
       requests: [
         { action: 'idle', params: { durationMs: 300 } },
         { action: 'idle', params: { durationMs: 400 } },
       ],
-    }
+    })
 
     const result = (await service.processBatch(payload)) as { kind: 'stream'; results: ActionResult[] }
 
@@ -354,7 +367,8 @@ describe('GenerationService', () => {
 
   it('prevents registering reserved action ids for custom actions', async () => {
     const { service } = createService()
-    await expect((service as any).buildCustomActionPlanData({ action: 'speak' }, '1')).rejects.toThrow('予約語')
+    const character = (service as any).config.characters[0]
+    await expect((service as any).buildCustomActionPlanData(character, { action: 'speak' }, '1')).rejects.toThrow('予約語')
   })
 
   it('builds combined timeline preserving clip order and total duration', async () => {
@@ -386,13 +400,13 @@ describe('GenerationService', () => {
       })
     )
 
-    const payload: GenerateRequestPayload = {
+    const payload = withCharacter({
       requests: [
         { action: 'speak', params: { text: 'hello' } },
         { action: 'idle', params: { durationMs: 300 } },
         { action: 'start' },
       ],
-    }
+    })
 
     await service.processBatch(payload)
 

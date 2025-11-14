@@ -24,6 +24,7 @@ paths:
               -d '{
                 "stream": false,
                 "debug": true,
+                "characterId": "anchor-a",
                 "requests": [
                   { "action": "start" },
                   { "action": "speak", "params": { "text": "こんにちは", "emotion": "happy" } },
@@ -43,6 +44,7 @@ paths:
                 value:
                   stream: false
                   debug: true
+                  characterId: "anchor-a"
                   requests:
                     - action: "start"
                     - action: "speak"
@@ -93,8 +95,12 @@ components:
     GenerateRequest:
       type: object
       required:
+        - characterId
         - requests
       properties:
+        characterId:
+          type: string
+          description: 使用するキャラクターID（バッチ全体で1つ）
         stream:
           type: boolean
           description: Whether to stream results as NDJSON
@@ -112,7 +118,7 @@ components:
           minItems: 1
           items:
             $ref: '#/components/schemas/ActionRequest'
-          description: Server processes actions in array order and auto-assigns ids (1,2,...) in responses
+          description: Server processes actions in array order and auto-assigns ids (1,2,...) in responses. `characterId` はリクエスト直下で指定し、バッチ内の全アクションが同じキャラクターを参照する。
         metadata:
           type: object
           additionalProperties: true
@@ -130,7 +136,8 @@ components:
         params:
           type: object
           additionalProperties: true
-          description: Action-specific parameters
+          description: >
+            Action-specific parameters（テキストや感情、モーションIDなど）。
     ActionResult:
       type: object
       required:
