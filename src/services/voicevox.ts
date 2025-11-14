@@ -77,15 +77,10 @@ export class VoicevoxClient {
   }
 
   private applySynthesisOverrides(query: VoicevoxAudioQuery, overrides: VoicevoxVoiceOptions): VoicevoxAudioQuery {
-    const adjusted: VoicevoxAudioQuery = { ...query }
-
-    if (overrides.speedScale !== undefined) adjusted.speedScale = overrides.speedScale
-    if (overrides.pitchScale !== undefined) adjusted.pitchScale = overrides.pitchScale
-    if (overrides.intonationScale !== undefined) adjusted.intonationScale = overrides.intonationScale
-    if (overrides.volumeScale !== undefined) adjusted.volumeScale = overrides.volumeScale
-    if (overrides.outputSamplingRate !== undefined) adjusted.outputSamplingRate = overrides.outputSamplingRate
-    if (overrides.outputStereo !== undefined) adjusted.outputStereo = overrides.outputStereo
-
-    return adjusted
+    const { speakerId, ...synthesisParams } = overrides
+    const definedOverrides = Object.fromEntries(
+      Object.entries(synthesisParams).filter(([, value]) => value !== undefined)
+    )
+    return { ...query, ...definedOverrides }
   }
 }
