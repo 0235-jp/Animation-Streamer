@@ -130,7 +130,7 @@ animation-streamer/
 - `characters[].idleMotions` は待機モーションのプール。`speechMotions` は `large` / `small` ごとに配列を分け、感情ごとにモーションセットを切り替えられる。
 - `characters[].speechTransitions` を設定すると、`speak` アクションの先頭に `enter`（例: idle→talk）、末尾に `exit`（例: talk→idle）をキャラクター単位で自動挿入する。遷移にも `emotion` を設定でき、`speechMotions` と同様に「一致したemotion → neutral → その他」の優先順位で選択される。
 - 各モーション `path` はffmpegが読めるローカルパス。
-- `characters[].audioProfile` はキャラクターに紐づくTTS設定として VOICEVOX のURLやspeakerIdに加え、`speedScale`/`pitchScale`/`intonationScale`/`volumeScale` や `outputSamplingRate`・`outputStereo` などの合成パラメータを任意で含む。`voices` 配列を指定すると、感情（`emotion`）ごとに話者 ID や調整値を切り替えられ、モーション選択と同じ優先順位で `requests[].params.emotion` に応じた TTS プロファイルが選択される。
+- `characters[].audioProfile` はキャラクターに紐づくTTS設定として VOICEVOX のURLやspeakerIdに加え、`speedScale`/`pitchScale`/`intonationScale`/`volumeScale` や `outputSamplingRate`・`outputStereo` などの合成パラメータを任意で含む。`voices` 配列を指定すると、感情（`emotion`）ごとに話者 ID や調整値を切り替えられ、モーション選択と同じ優先順位で `requests[].params.emotion` に応じた TTS プロファイルが選択される。設定ファイルではトップレベルの `speakerId` と各種パラメータのみを指定すれば良く、`loader.ts` 側で自動的に `defaultVoice` に正規化されるため、`defaultVoice` プロパティを明示的に記述する必要はない。
 
 ## 3. 状態管理
 - `interface StreamState { sessionId: string; phase: 'IDLE'|'WAITING'|'SPEECH'|'STOPPED'; activeMotionId?: string; queueLength: number; }
