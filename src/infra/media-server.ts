@@ -1,6 +1,9 @@
 import NodeMediaServer from 'node-media-server'
 import { logger } from '../utils/logger'
 
+type ClientArgs = Record<string, unknown>
+type PublishArgs = Record<string, unknown>
+
 export interface MediaServerConfig {
   rtmpPort: number
   httpPort: number
@@ -31,27 +34,27 @@ export class MediaServer {
   }
 
   private setupEventHandlers(): void {
-    this.nms.on('preConnect', (id, args) => {
+    this.nms.on('preConnect', (id: string, args: ClientArgs) => {
       logger.debug({ id, args }, 'RTMP client connecting')
     })
 
-    this.nms.on('postConnect', (id, args) => {
+    this.nms.on('postConnect', (id: string, args: ClientArgs) => {
       logger.info({ id, args }, 'RTMP client connected')
     })
 
-    this.nms.on('doneConnect', (id, args) => {
+    this.nms.on('doneConnect', (id: string, args: ClientArgs) => {
       logger.info({ id, args }, 'RTMP client disconnected')
     })
 
-    this.nms.on('prePublish', (id, streamPath, args) => {
+    this.nms.on('prePublish', (id: string, streamPath: string, args: PublishArgs) => {
       logger.info({ id, streamPath, args }, 'RTMP stream publishing')
     })
 
-    this.nms.on('postPublish', (id, streamPath, args) => {
+    this.nms.on('postPublish', (id: string, streamPath: string, args: PublishArgs) => {
       logger.info({ id, streamPath, args }, 'RTMP stream published')
     })
 
-    this.nms.on('donePublish', (id, streamPath, args) => {
+    this.nms.on('donePublish', (id: string, streamPath: string, args: PublishArgs) => {
       logger.info({ id, streamPath, args }, 'RTMP stream stopped')
     })
   }
