@@ -25,9 +25,7 @@ export const transitionMotionSchema = z.object({
 })
 const transitionCollectionSchema = z.union([transitionMotionSchema, z.array(transitionMotionSchema).min(1)])
 
-const voicevoxVoiceSchema = z.object({
-  emotion: z.string().min(1).default('neutral'),
-  speakerId: z.number().int().nonnegative(),
+const synthesisParamsSchema = z.object({
   speedScale: z.number().positive().optional(),
   pitchScale: z.number().optional(),
   intonationScale: z.number().nonnegative().optional(),
@@ -36,16 +34,15 @@ const voicevoxVoiceSchema = z.object({
   outputStereo: z.boolean().optional(),
 })
 
-export const audioProfileSchema = z.object({
+const voicevoxVoiceSchema = synthesisParamsSchema.extend({
+  emotion: z.string().min(1).default('neutral'),
+  speakerId: z.number().int().nonnegative(),
+})
+
+export const audioProfileSchema = synthesisParamsSchema.extend({
   ttsEngine: z.literal('voicevox'),
   voicevoxUrl: z.string().min(1),
   speakerId: z.number().int().nonnegative().default(1),
-  speedScale: z.number().positive().optional(),
-  pitchScale: z.number().optional(),
-  intonationScale: z.number().nonnegative().optional(),
-  volumeScale: z.number().nonnegative().optional(),
-  outputSamplingRate: z.number().int().positive().optional(),
-  outputStereo: z.boolean().optional(),
   voices: z.array(voicevoxVoiceSchema).optional(),
 })
 
