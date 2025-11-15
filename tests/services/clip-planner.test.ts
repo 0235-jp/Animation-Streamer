@@ -23,7 +23,7 @@ describe('ClipPlanner timeline generation', () => {
   let durations: Map<string, number>
 
   beforeAll(async () => {
-    const configPath = path.resolve(process.cwd(), 'config/example.stream-profile.json')
+    const configPath = path.resolve(process.cwd(), 'config/example.stream-profile.local.json')
     config = await loadConfig(configPath)
     character = config.characters[0]
     durations = new Map<string, number>()

@@ -6,7 +6,7 @@ import { loadConfig } from '../../src/config/loader'
 describe('loadConfig', () => {
   it('resolves asset paths and normalizes motion metadata', async () => {
     const mkdirSpy = vi.spyOn(fs, 'mkdir')
-    const configPath = path.resolve(process.cwd(), 'config/example.stream-profile.json')
+    const configPath = path.resolve(process.cwd(), 'config/example.stream-profile.local.json')
 
     const result = await loadConfig(configPath)
 

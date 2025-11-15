@@ -1,7 +1,11 @@
 import { createApp } from './app'
 import { logger } from './utils/logger'
 
-const start = async () => {
+export interface StartOptions {
+  exit?: (code?: number) => never
+}
+
+export const start = async (options: StartOptions = {}) => {
   try {
     const { app, config } = await createApp()
     const port = Number(process.env.PORT ?? config.server.port ?? 4000)
@@ -11,8 +15,13 @@ const start = async () => {
     })
   } catch (error) {
     logger.error({ err: error }, 'Failed to start server')
-    process.exit(1)
+    const exit = options.exit ?? ((code?: number) => process.exit(code))
+    exit(1)
   }
 }
 
-void start()
+const isMainModule = typeof require !== 'undefined' && typeof module !== 'undefined' && require.main === module
+
+if (isMainModule) {
+  void start()
+}

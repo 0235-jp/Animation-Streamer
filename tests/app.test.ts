@@ -7,7 +7,7 @@ import * as loader from '../src/config/loader'
 describe('createApp', () => {
   it('loads config from provided path and wires health endpoint', async () => {
     const spy = vi.spyOn(loader, 'loadConfig')
-    const configPath = path.resolve(process.cwd(), 'config/example.stream-profile.json')
+    const configPath = path.resolve(process.cwd(), 'config/example.stream-profile.local.json')
 
     const { app, config } = await createApp({ configPath })
     const response = await request(app).get('/health')
