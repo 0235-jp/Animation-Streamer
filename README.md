@@ -8,8 +8,10 @@
 - VOICEVOX エンジン (ローカルAPI)
 
 ## セットアップ
+ローカルの場合は `config/example.stream-profile.local.json` を、Docker Composeの場合は `config/example.stream-profile.docker.json` を `config/stream-profile.json` にコピーしてください。
+
 ```bash
-cp config/example.stream-profile.json config/stream-profile.json
+cp config/example.stream-profile.local.json config/stream-profile.json
 npm install
 ```
 
@@ -21,7 +23,9 @@ npm run dev
 `http://localhost:4000/docs` で Swagger UI を確認できます。
 
 ## Docker での起動
-`docker compose` を利用するとローカルの Node.js を汚さずに起動できます。初回は `config/example.stream-profile.json` を `config/stream-profile.json` にコピーし、設定ファイルで参照しているモーション素材ディレクトリ（例として本リポジトリでは `example/`）を Compose 側で同じパスにマウントしてください。
+`docker compose` を利用するとローカルの Node.js を汚さずに起動できます。初回は `config/example.stream-profile.docker.json` を `config/stream-profile.json` にコピーし、設定ファイルで参照しているモーション素材ディレクトリ（例として本リポジトリでは `example/`）を Compose 側で同じパスにマウントしてください。
+
+Compose には VOICEVOX エンジンの `voicevox` サービス（`voicevox/voicevox_engine:cpu-latest`）も含まれており、`http://voicevox:50021` で待ち受けます。`config/stream-profile.json` の `voicevoxUrl` もこのホスト名を参照するようデフォルトで設定しているため、Compose を使わない場合には実行環境に合わせて URL を変更してください。
 
 ### 開発用コンテナ (`animation-streamer-dev`)
 - ローカルの `src/`・`config/`・設定で参照しているモーション素材ディレクトリ（例: `example/`）をボリュームマウントした `ts-node` 実行環境です。
@@ -76,4 +80,4 @@ curl -X POST http://localhost:4000/api/generate \
   - audioProfile: キャラクター単位の VOICEVOX 接続設定。`voicevoxUrl` や話者 ID、emotion 別の `voices[]` を定義できます。
 - assets.tempDir: 生成処理中の一時的な音声・動画を配置するディレクトリで、起動時に自動作成されます。
 
-`config/example.stream-profile.json` には Anchor A/B の 2 キャラクター例が含まれているので、必要に応じて `characters[]` を増やし、`characterId` を切り替えて利用してください。
+`config/example.stream-profile.docker.json` / `config/example.stream-profile.local.json` には Anchor のサンプルが含まれているので、必要に応じて `characters[]` を増やし、`characterId` を切り替えて利用してください。
