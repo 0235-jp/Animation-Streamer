@@ -27,5 +27,7 @@ FROM base AS production
 COPY --from=production-deps /app/node_modules ./node_modules
 COPY --from=build /app/package*.json ./
 COPY --from=build /app/dist ./dist
+RUN chown -R node:node /app
+USER node
 EXPOSE 4000
 CMD ["npm", "run", "start"]
