@@ -1,0 +1,20 @@
+services:
+  animation-streamer-dev:
+    build:
+      context: .
+      target: dev
+    volumes:
+      - ./src:/app/src
+      - ./config:/app/config
+      - ./example:/app/example:ro # configで参照しているモーション群を置いている任意のディレクトリに差し替えてください
+    ports:
+      - '4000:4000'
+
+  animation-streamer:
+    image: ghcr.io/0235-jp/animation-streamer:latest
+    restart: unless-stopped
+    volumes:
+      - ./config:/app/config
+      - ./example:/app/example:ro # 上記と同様、実際のアセットディレクトリを指定する
+    ports:
+      - '4000:4000'
