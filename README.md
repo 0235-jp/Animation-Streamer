@@ -21,10 +21,10 @@ npm run dev
 `http://localhost:4000/docs` で Swagger UI を確認できます。
 
 ## Docker での起動
-`docker compose` を利用するとローカルの Node.js を汚さずに起動できます。初回は `config/example.stream-profile.json` を `config/stream-profile.json` にコピーし、`example/` ディレクトリが同階層に存在することを確認してください。
+`docker compose` を利用するとローカルの Node.js を汚さずに起動できます。初回は `config/example.stream-profile.json` を `config/stream-profile.json` にコピーし、設定ファイルで参照しているモーション素材ディレクトリ（例として本リポジトリでは `example/`）を Compose 側で同じパスにマウントしてください。
 
 ### 開発用コンテナ (`animation-streamer-dev`)
-- ローカルの `src/`・`config/`・`example/` をボリュームマウントした `ts-node` 実行環境です。
+- ローカルの `src/`・`config/`・設定で参照しているモーション素材ディレクトリ（例: `example/`）をボリュームマウントした `ts-node` 実行環境です。
 - 以下で起動できます。
   ```bash
   docker compose up animation-streamer-dev
@@ -33,14 +33,14 @@ npm run dev
 
 ### 公開イメージ (`animation-streamer`)
 - `ghcr.io/0235-jp/animation-streamer:latest` を利用し、`npm run start` でビルド済み成果物を起動するサービスです。
-- イメージ内には設定ファイルやモーション素材を含めていないため、必ず `config/` とモーションを置いたディレクトリ（例: `example/`）をボリュームマウントしてください。
+- イメージ内には設定ファイルやモーション素材を含めていないため、必ず `config/` と設定で参照しているディレクトリ（例: `example/`）をボリュームマウントしてください。
   ```bash
   docker compose pull animation-streamer
   docker compose up animation-streamer
   ```
 - ボリューム内の `config/tmp` に生成された一時ファイルが書き出されます。必要に応じてクリーンアップしてください。
 
-両サービスとも `http://localhost:4000` で待ち受けます。`PORT` や `HOST` を変更したい場合は `docker-compose.yml` の `environment` を編集してください。
+両サービスとも `http://localhost:4000` で待ち受けます。`PORT` や `HOST` を変更したい場合は `config/stream-profile.json` の `server` セクションを更新してください。
 
 ## API 例
 ```bash
