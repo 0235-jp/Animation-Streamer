@@ -17,6 +17,7 @@ CMD ["npm", "run", "dev"]
 
 FROM deps AS build
 COPY tsconfig.json ./
+COPY docs/openapi.yaml ./docs/openapi.yaml
 COPY src ./src
 RUN npm run build
 
@@ -28,6 +29,7 @@ FROM base AS production
 COPY --from=production-deps /app/node_modules ./node_modules
 COPY --from=build /app/package*.json ./
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/docs/openapi.yaml ./docs/openapi.yaml
 RUN chown -R node:node /app
 USER node
 EXPOSE 4000
