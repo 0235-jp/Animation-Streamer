@@ -13,7 +13,6 @@ RUN npm ci
 FROM deps AS dev
 COPY . .
 EXPOSE 4000
-ENV NODE_ENV=development
 CMD ["npm", "run", "dev"]
 
 FROM deps AS build
@@ -25,7 +24,6 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 FROM base AS production
-ENV NODE_ENV=production
 COPY --from=production-deps /app/node_modules ./node_modules
 COPY --from=build /app/package*.json ./
 COPY --from=build /app/dist ./dist
