@@ -8,8 +8,8 @@ export interface StartOptions {
 export const start = async (options: StartOptions = {}) => {
   try {
     const { app, config } = await createApp()
-    const port = config.server.port ?? 4000
-    const host = config.server.host ?? 'localhost'
+    const port = Number(process.env.PORT ?? config.server.port ?? 4000)
+    const host = process.env.HOST ?? config.server.host ?? 'localhost'
     app.listen(port, host, () => {
       logger.info({ port, host }, 'Server started')
     })
