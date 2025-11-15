@@ -16,7 +16,8 @@ EXPOSE 4000
 CMD ["npm", "run", "dev"]
 
 FROM deps AS build
-COPY . .
+COPY tsconfig.json ./
+COPY src ./src
 RUN npm run build
 
 FROM base AS production-deps
