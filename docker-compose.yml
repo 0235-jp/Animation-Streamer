@@ -3,7 +3,6 @@ services:
     build:
       context: .
       target: dev
-    command: npm run dev
     volumes:
       - ./src:/app/src
       - ./config:/app/config
