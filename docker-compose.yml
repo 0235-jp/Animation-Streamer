@@ -1,0 +1,29 @@
+services:
+  animation-streamer-dev:
+    build:
+      context: .
+      target: dev
+    command: npm run dev
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4000
+      NODE_ENV: development
+    volumes:
+      - ./src:/app/src
+      - ./config:/app/config
+      - ./example:/app/example:ro # configで参照しているモーション群を置いている任意のディレクトリに差し替えてください
+    ports:
+      - '4000:4000'
+
+  animation-streamer:
+    image: ghcr.io/0235-jp/animation-streamer:latest
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4000
+      NODE_ENV: production
+    volumes:
+      - ./config:/app/config
+      - ./example:/app/example:ro # 上記と同様、実際のアセットディレクトリを指定する
+    ports:
+      - '4000:4000'

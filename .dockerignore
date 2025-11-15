@@ -1,0 +1,12 @@
+node_modules
+dist
+config/tmp
+coverage
+.DS_Store
+npm-debug.log*
+yarn-error.log
+.git
+.gitmodules
+.npmrc
+.env*
+tmp
