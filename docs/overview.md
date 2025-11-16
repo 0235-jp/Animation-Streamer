@@ -30,7 +30,7 @@ Client (OBS, API caller)
    |          \                    \
 IdleLoop      SpeechTaskQueue (TODO) GenerationService (mp4出力)
 Controller     \                    /
-               MediaPipeline (ffmpeg, TTS, assets)
+               MediaPipeline (ffmpeg, TTS, motions/output)
         |
  node-media-server (RTMP)
         |
@@ -65,7 +65,7 @@ Controller     \                    /
    - 任意アクション: 該当キャラクターの `actions` から動画を単発で出力。
 3. `stream = true` の場合は処理完了したアクションから順にNDJSONで返却。`false` の場合は全アクション完了後に配列で返却。
 4. `stream = false` の場合は全アクションを1本のタイムラインへ並べてffmpegで一括レンダリングし、最終MP4のみ `combined` として返す（個別クリップは返却しない）。
-5. 生成ファイルは `assets.tempDir` 配下に保存され、OBSや他プロセスが参照できる。
+5. 生成ファイルはプロジェクト直下の `output/` に保存され、OBSや他プロセスが参照できる（コンテナ利用時は `RESPONSE_PATH_BASE` でホストのフルパスを返す）。
 
 ## 状態遷移
 ```

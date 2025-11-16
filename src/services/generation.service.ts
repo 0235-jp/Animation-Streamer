@@ -315,7 +315,7 @@ export class GenerationService {
 
   private async moveToTemp(sourcePath: string, prefix: string): Promise<string> {
     const fileName = `${prefix}-${randomUUID()}.mp4`
-    const destination = path.join(this.config.assets.absoluteTempDir, fileName)
+    const destination = path.join(this.config.paths.outputDir, fileName)
     try {
       await fs.rename(sourcePath, destination)
     } catch (error) {
@@ -327,8 +327,9 @@ export class GenerationService {
         throw error
       }
     }
-    logger.info({ destination }, 'Generated clip')
-    return destination
+    const responsePath = this.toResponsePath(destination)
+    logger.info({ destination, responsePath }, 'Generated clip')
+    return responsePath
   }
 
   private async planSpeakAction(
@@ -533,6 +534,18 @@ export class GenerationService {
       throw new ActionProcessingError(`characterId=${normalizedId} は未定義です`, '0', 400)
     }
     return character
+  }
+
+  private toResponsePath(absolutePath: string): string {
+    const { responsePathBase, outputDir } = this.config.paths
+    if (!responsePathBase) {
+      return absolutePath
+    }
+    const relative = path.relative(outputDir, absolutePath)
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+      return absolutePath
+    }
+    return path.join(responsePathBase, relative)
   }
 }
 

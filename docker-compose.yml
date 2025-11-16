@@ -14,7 +14,10 @@ services:
     volumes:
       - ./src:/app/src
       - ./config:/app/config
-      - ./example:/app/example:ro # configで参照しているモーション群を置いている任意のディレクトリに差し替えてください
+      - ./motions:/app/motions:ro
+      - ./output:/app/output
+    environment:
+      - RESPONSE_PATH_BASE=${PWD}/output
     ports:
       - '4000:4000'
 
@@ -25,6 +28,9 @@ services:
       - voicevox
     volumes:
       - ./config:/app/config
-      - ./example:/app/example:ro # 上記と同様、実際のアセットディレクトリを指定する
+      - ./motions:/app/motions:ro
+      - ./output:/app/output
+    environment:
+      - RESPONSE_PATH_BASE=${PWD}/output
     ports:
       - '4000:4000'

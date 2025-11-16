@@ -16,7 +16,7 @@ export const createApp = async (options: CreateAppOptions = {}) => {
   const configPath = options.configPath ?? path.resolve(process.cwd(), 'config/stream-profile.json')
   const config = await loadConfig(configPath)
 
-  const mediaPipeline = new MediaPipeline(config.assets.absoluteTempDir)
+  const mediaPipeline = new MediaPipeline(config.paths.outputDir)
   const clipPlanner = new ClipPlanner(mediaPipeline, config.characters)
   const voicevox = new VoicevoxClient()
   const generationService = new GenerationService({
