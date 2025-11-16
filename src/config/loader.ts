@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
+import process from 'node:process'
 import { configSchema, type StreamerConfig } from './schema'
 
 export interface ResolvedAction {
@@ -69,13 +70,17 @@ export interface ResolvedCharacter {
   audioProfile: ResolvedAudioProfile
 }
 
-export interface ResolvedConfig extends Omit<StreamerConfig, 'characters' | 'assets'> {
+export interface ResolvedPaths {
+  projectRoot: string
+  motionsDir: string
+  outputDir: string
+  responsePathBase?: string
+}
+
+export interface ResolvedConfig extends Omit<StreamerConfig, 'characters'> {
   characters: ResolvedCharacter[]
   characterMap: Map<string, ResolvedCharacter>
-  assets: {
-    tempDir: string
-    absoluteTempDir: string
-  }
+  paths: ResolvedPaths
 }
 
 export const loadConfig = async (configPath: string): Promise<ResolvedConfig> => {
@@ -83,9 +88,18 @@ export const loadConfig = async (configPath: string): Promise<ResolvedConfig> =>
   const parsed = configSchema.parse(JSON.parse(raw))
 
   const baseDir = path.dirname(configPath)
-  const resolveAssetPath = (assetPath: string) => path.resolve(baseDir, assetPath)
+  const projectRoot = path.resolve(baseDir, '..')
+  const motionsDir = path.resolve(projectRoot, 'motions')
+  const outputDir = path.resolve(projectRoot, 'output')
+  await ensureDirectoryExists(
+    motionsDir,
+    `motions ディレクトリが存在しません (${motionsDir})。README のセットアップ手順で example/motion のコピーを行ってください。`
+  )
+  await fs.mkdir(outputDir, { recursive: true })
+  const responsePathBase = process.env.RESPONSE_PATH_BASE?.trim() || undefined
+  const resolveMotionPath = createMotionResolver(motionsDir)
 
-  const characters = parsed.characters.map((character) => resolveCharacter(character, resolveAssetPath))
+  const characters = parsed.characters.map((character) => resolveCharacter(character, resolveMotionPath))
   const characterMap = new Map<string, ResolvedCharacter>()
   for (const character of characters) {
     if (characterMap.has(character.id)) {
@@ -94,27 +108,26 @@ export const loadConfig = async (configPath: string): Promise<ResolvedConfig> =>
     characterMap.set(character.id, character)
   }
 
-  const absoluteTempDir = path.resolve(baseDir, parsed.assets.tempDir)
-  await fs.mkdir(absoluteTempDir, { recursive: true })
-
   return {
     server: parsed.server,
     characters,
     characterMap,
-    assets: {
-      tempDir: parsed.assets.tempDir,
-      absoluteTempDir,
+    paths: {
+      projectRoot,
+      motionsDir,
+      outputDir,
+      responsePathBase,
     },
   }
 }
 
 const resolveCharacter = (
   character: StreamerConfig['characters'][number],
-  resolveAssetPath: (assetPath: string) => string
+  resolveMotionPath: (assetPath: string) => string
 ): ResolvedCharacter => {
   const actions: ResolvedAction[] = character.actions.map((action) => ({
     ...action,
-    absolutePath: resolveAssetPath(action.path),
+    absolutePath: resolveMotionPath(action.path),
   }))
 
   const idleMotions: ResolvedIdlePools = {
@@ -122,13 +135,13 @@ const resolveCharacter = (
       ...motion,
       type: 'large' as const,
       emotion: motion.emotion.toLowerCase(),
-      absolutePath: resolveAssetPath(motion.path),
+      absolutePath: resolveMotionPath(motion.path),
     })),
     small: character.idleMotions.small.map((motion) => ({
       ...motion,
       type: 'small' as const,
       emotion: motion.emotion.toLowerCase(),
-      absolutePath: resolveAssetPath(motion.path),
+      absolutePath: resolveMotionPath(motion.path),
     })),
   }
 
@@ -137,20 +150,20 @@ const resolveCharacter = (
       ...motion,
       type: 'large' as const,
       emotion: motion.emotion.toLowerCase(),
-      absolutePath: resolveAssetPath(motion.path),
+      absolutePath: resolveMotionPath(motion.path),
     })),
     small: character.speechMotions.small.map((motion) => ({
       ...motion,
       type: 'small' as const,
       emotion: motion.emotion.toLowerCase(),
-      absolutePath: resolveAssetPath(motion.path),
+      absolutePath: resolveMotionPath(motion.path),
     })),
   }
 
   const normalizeTransition = (motion: { id: string; emotion: string; path: string }): ResolvedTransitionMotion => ({
     ...motion,
     emotion: motion.emotion.toLowerCase(),
-    absolutePath: resolveAssetPath(motion.path),
+    absolutePath: resolveMotionPath(motion.path),
   })
 
   const toTransitionList = (
@@ -203,5 +216,35 @@ const resolveCharacter = (
       defaultVoice,
       voices,
     },
+  }
+}
+
+const ensureDirectoryExists = async (dir: string, errorMessage: string) => {
+  try {
+    await fs.access(dir)
+  } catch (error) {
+    const nodeError = error as NodeJS.ErrnoException
+    if (nodeError.code === 'ENOENT') {
+      throw new Error(errorMessage)
+    }
+    throw error
+  }
+}
+
+const createMotionResolver = (motionsDir: string) => {
+  return (relativePath: string) => {
+    const trimmed = relativePath?.trim()
+    if (!trimmed) {
+      throw new Error('モーションの path は必須です')
+    }
+    if (path.isAbsolute(trimmed)) {
+      throw new Error(`モーションの path は motions/ 配下の相対パスで指定してください: ${trimmed}`)
+    }
+    const resolved = path.resolve(motionsDir, trimmed)
+    const relative = path.relative(motionsDir, resolved)
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+      throw new Error(`モーションの path は motions/ 配下の相対パスで指定してください: ${trimmed}`)
+    }
+    return resolved
   }
 }

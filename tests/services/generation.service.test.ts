@@ -1,4 +1,5 @@
 import { promises as fs } from 'node:fs'
+import path from 'node:path'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { GenerationService, ActionProcessingError } from '../../src/services/generation.service'
 import { NoAudioTrackError } from '../../src/services/media-pipeline'
@@ -210,6 +211,28 @@ describe('GenerationService', () => {
     const result = (await service.processBatch(payload)) as { kind: 'stream'; results: ActionResult[] }
 
     expect(result.results[0].motionIds).toEqual(['clip-1'])
+  })
+
+  it('rewrites output paths when responsePathBase is configured', async () => {
+    const customConfig = createResolvedConfig({
+      paths: {
+        projectRoot: '/app',
+        motionsDir: '/app/motions',
+        outputDir: '/app/output',
+        responsePathBase: '/host/output',
+      },
+    })
+    customConfig.characterMap.set(customConfig.characters[0].id, customConfig.characters[0])
+    const { service } = createService(customConfig)
+    const payload = withCharacter({
+      stream: false,
+      requests: [{ action: 'idle', params: { durationMs: 400 } }],
+    })
+
+    const result = await service.processBatch(payload)
+
+    expect(result.kind).toBe('combined')
+    expect(result.result.outputPath).toBe(path.join('/host/output', 'batch-test-uuid.mp4'))
   })
 
   it('pads speech audio with silent segments when transitions are present', async () => {

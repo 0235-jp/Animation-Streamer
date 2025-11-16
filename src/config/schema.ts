@@ -70,9 +70,6 @@ export const configSchema = z.object({
     })
     .default({ port: 4000, host: 'localhost' }),
   characters: z.array(characterSchema).min(1),
-  assets: z.object({
-    tempDir: z.string().min(1),
-  }),
 })
 
 export type StreamerConfig = z.infer<typeof configSchema>

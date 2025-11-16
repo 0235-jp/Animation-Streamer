@@ -15,6 +15,6 @@ describe('createApp', () => {
     expect(spy).toHaveBeenCalledWith(configPath)
     expect(response.status).toBe(200)
     expect(response.body).toEqual({ status: 'ok' })
-    expect(config.assets.absoluteTempDir).toContain(path.join('config', 'tmp'))
+    expect(config.paths.outputDir).toContain('output')
   })
 })

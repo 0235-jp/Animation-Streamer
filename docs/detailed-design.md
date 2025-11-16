@@ -53,31 +53,31 @@ animation-streamer/
       "id": "anchor-a",
       "displayName": "Anchor A",
       "actions": [
-        { "id": "start", "path": "../example/motion/start.mp4" }
+        { "id": "start", "path": "start.mp4" }
       ],
       "idleMotions": {
         "large": [
-          { "id": "idle-a-large", "emotion": "neutral", "path": "../example/motion/idle.mp4" }
+          { "id": "idle-a-large", "emotion": "neutral", "path": "idle.mp4" }
         ],
         "small": [
-          { "id": "idle-a-small", "emotion": "neutral", "path": "../example/motion/talk_idle.mp4" }
+          { "id": "idle-a-small", "emotion": "neutral", "path": "talk_idle.mp4" }
         ]
       },
       "speechMotions": {
         "large": [
-          { "id": "talk-a-large", "emotion": "neutral", "path": "../example/motion/talk_large.mp4" },
-          { "id": "talk-a-happy-large", "emotion": "happy", "path": "../example/motion/talk_large.mp4" }
+          { "id": "talk-a-large", "emotion": "neutral", "path": "talk_large.mp4" },
+          { "id": "talk-a-happy-large", "emotion": "happy", "path": "talk_large.mp4" }
         ],
         "small": [
-          { "id": "talk-a-small", "emotion": "neutral", "path": "../example/motion/talk_small.mp4" }
+          { "id": "talk-a-small", "emotion": "neutral", "path": "talk_small.mp4" }
         ]
       },
       "speechTransitions": {
         "enter": [
-          { "id": "a-enter-neutral", "emotion": "neutral", "path": "../example/motion/enter.mp4" }
+          { "id": "a-enter-neutral", "emotion": "neutral", "path": "enter.mp4" }
         ],
         "exit": [
-          { "id": "a-exit-neutral", "emotion": "neutral", "path": "../example/motion/exit.mp4" }
+          { "id": "a-exit-neutral", "emotion": "neutral", "path": "exit.mp4" }
         ]
       },
       "audioProfile": {
@@ -94,22 +94,22 @@ animation-streamer/
       "id": "anchor-b",
       "displayName": "Anchor B",
       "actions": [
-        { "id": "bow", "path": "../example/motion/bow.mp4" }
+        { "id": "bow", "path": "bow.mp4" }
       ],
       "idleMotions": {
         "large": [
-          { "id": "idle-b-large", "emotion": "neutral", "path": "../example/motion/idle.mp4" }
+          { "id": "idle-b-large", "emotion": "neutral", "path": "idle.mp4" }
         ],
         "small": [
-          { "id": "idle-b-small", "emotion": "neutral", "path": "../example/motion/talk_idle.mp4" }
+          { "id": "idle-b-small", "emotion": "neutral", "path": "talk_idle.mp4" }
         ]
       },
       "speechMotions": {
         "large": [
-          { "id": "talk-b-large", "emotion": "neutral", "path": "../example/motion/talk_large.mp4" }
+          { "id": "talk-b-large", "emotion": "neutral", "path": "talk_large.mp4" }
         ],
         "small": [
-          { "id": "talk-b-small", "emotion": "neutral", "path": "../example/motion/talk_small.mp4" }
+          { "id": "talk-b-small", "emotion": "neutral", "path": "talk_small.mp4" }
         ]
       },
       "audioProfile": {
@@ -118,8 +118,7 @@ animation-streamer/
         "speakerId": 8
       }
     }
-  ],
-  "assets": { "tempDir": "./tmp" }
+  ]
 }
 ```
 - `server.host` は API がバインドするアドレスで、デフォルトは `localhost`。LAN 越しに公開する場合は `0.0.0.0` へ設定できる。
@@ -129,8 +128,10 @@ animation-streamer/
 - `characters[].actions` はキャラクター固有の単発モーション定義。`speak` / `idle` は予約語のため登録不可で、IDは小文字推奨。
 - `characters[].idleMotions` は待機モーションのプール。`speechMotions` は `large` / `small` ごとに配列を分け、感情ごとにモーションセットを切り替えられる。
 - `characters[].speechTransitions` を設定すると、`speak` アクションの先頭に `enter`（例: idle→talk）、末尾に `exit`（例: talk→idle）をキャラクター単位で自動挿入する。遷移にも `emotion` を設定でき、`speechMotions` と同様に「一致したemotion → neutral → その他」の優先順位で選択される。
-- 各モーション `path` はffmpegが読めるローカルパス。
+- 各モーション `path` は ffmpeg が読めるローカルパス。プロジェクト直下に固定された `motions/` からの相対パス（例: `talk_idle.mp4` や `aaaa/talk_idle.mp4`）のみを記述し、実行環境では `./motions:/app/motions:ro` をボリュームマウントして同じパス構成を再現する。
 - `characters[].audioProfile` はキャラクターに紐づくTTS設定として VOICEVOX のURLやspeakerIdに加え、`speedScale`/`pitchScale`/`intonationScale`/`volumeScale` や `outputSamplingRate`・`outputStereo` などの合成パラメータを任意で含む。`voices` 配列を指定すると、感情（`emotion`）ごとに話者 ID や調整値を切り替えられ、モーション選択と同じ優先順位で `requests[].params.emotion` に応じた TTS プロファイルが選択される。設定ファイルではトップレベルの `speakerId` と各種パラメータのみを指定すれば良く、`loader.ts` 側で自動的に `defaultVoice` に正規化されるため、`defaultVoice` プロパティを明示的に記述する必要はない。
+- 生成済み MP4・WAV は設定とは独立したプロジェクト直下の `output/` に保存する。Docker では `./output:/app/output` をマウントし、ホストとコンテナで同じパスを共有する。
+- 環境変数 `RESPONSE_PATH_BASE` を指定すると、`output/` からの相対パスをもとにホスト上のフルパスを組み立ててレスポンスへ埋め込む。コンテナ配下のパス（例: `/app/output/...`）をそのまま返してもホストから参照できないため、Compose では `RESPONSE_PATH_BASE=${PWD}/output` のように指定してパス解決を行う。未指定の場合はコンテナ内絶対パスを返す。
 
 ## 3. 状態管理
 - `interface StreamState { sessionId: string; phase: 'IDLE'|'WAITING'|'SPEECH'|'STOPPED'; activeMotionId?: string; queueLength: number; }
@@ -164,7 +165,7 @@ animation-streamer/
 - 現段階では`enqueue`にTODOを入れ、APIからの呼び出しを受けるだけ。
 
 ## 6. GenerationService（generateエンドポイント）
-- 役割: `POST /api/generate` のアクション列を処理し、音声合成と動画合成を行って `assets.tempDir` にファイルを生成する。配信ストリームの状態とは独立して実行される。
+- 役割: `POST /api/generate` のアクション列を処理し、音声合成と動画合成を行ってプロジェクト直下の `output/` にファイルを生成する。配信ストリームの状態とは独立して実行される。
 
 ### 6.1 リクエストボディ
 ```jsonc
@@ -217,7 +218,7 @@ animation-streamer/
 
 ### 6.3 処理フロー
 1. `GenerationService` がリクエスト全体をバリデート。`requests` が空なら400。
-2. `requests` を順次処理。各アクションは `GenerationJobContext` に共有リソース（設定・tempDir・VOICEVOXクライアント）を持つ。
+2. `requests` を順次処理。各アクションは `GenerationJobContext` に共有リソース（設定・outputディレクトリ・VOICEVOXクライアント）を持つ。
 3. `speak`:
    1. `VoicevoxClient.synthesize(text)` でWAV生成。
    2. `MediaPipeline.normalizeAudio` で 48kHz / stereo に揃えたあと、`MediaPipeline.trimAudioSilence` で前後無音を削除。トリミング済み音声を発話本体として保持し、このファイルの長さを `ClipPlanner` の入力に使う。
@@ -253,7 +254,7 @@ animation-streamer/
   - `trimAudioSilence(input, {levelDb})`：`silenceremove → areverse → silenceremove → areverse` の2段構成で、先頭・末尾の無音を独立して削除する。デフォルトでは -70dB 未満を無音とみなし、発話中のポーズは残る。戻り値はトリミング済みファイルパス。
   - `compose(clips, audioPath | null, durationMs)`：`clips` から `concat` ファイルを生成し、必要数だけ `ffmpeg -stream_loop` or 事前コピーで並べる。映像は `-c:v copy` で元素材のエンコード/解像度を維持し、音声が無い場合は `anullsrc` を入力に追加してAACトラックを生成。音声がある場合は、トリミング済み音声（＋必要なサイレントパディング、またはアクション動画から抽出したBGM）を入力に使う。
     - モーション動画に残っている音声ストリームは `-map 0:v:0 -map 1:a:0` で強制的に破棄し、`compose` に渡した音声入力（VOICEVOX / 無音WAV / アクション用に抽出した音声）のみを最終MP4へ多重化する。したがって `characters[].speechMotions` / `characters[].idleMotions` / `characters[].speechTransitions` に音声トラックが残っていても出力へ混入しない一方、カスタムアクションは事前に抽出した音声がそのまま利用される。
-  - 合成ファイルはジョブディレクトリ内に MP4 で書き出し、`GenerationService` が `assets.tempDir` へ移動してクライアントへ絶対パスを返す。映像コーデックは素材準拠（`copy`）で、音声のみAACへ揃える。
+  - 合成ファイルはジョブディレクトリ内に MP4 で書き出し、`GenerationService` が固定の `output/` へ移動してクライアントへ絶対パスを返す。映像コーデックは素材準拠（`copy`）で、音声のみAACへ揃える。`RESPONSE_PATH_BASE` が設定されている場合はここでホスト側のパスへ書き換える。
   - 生成中の一時ファイルは `CleanupService` に登録しておき、成功/失敗に関わらず削除。
 - ストリーム配信用の `createIdleProcess` / `createSpeechProcess` も将来ここにまとめるが、現段階では `generate` 用 `compose` が中心。
 - ffmpeg呼び出しは `fluent-ffmpeg` か `child_process.spawn` のどちらでもよいが、`-f concat -safe 0 -i <list>` + `-i <audio>` + `-c:v copy -c:a aac -shortest` を基本形とする。

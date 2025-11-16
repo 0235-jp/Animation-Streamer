@@ -9,8 +9,9 @@ import type {
   ResolvedSpeechTransitions,
 } from '../../src/config/loader'
 
-const assetsDir = path.resolve(process.cwd(), 'config/tmp')
-const motionDir = path.resolve(process.cwd(), 'example/motion')
+const projectRoot = process.cwd()
+const motionDir = path.resolve(projectRoot, 'motions')
+const outputDir = path.resolve(projectRoot, 'output')
 
 const createMotion = (options: {
   id: string
@@ -20,7 +21,7 @@ const createMotion = (options: {
 }): ResolvedIdleMotion => ({
   id: options.id,
   type: options.type,
-  path: path.relative(path.resolve(process.cwd(), 'config'), path.join(motionDir, options.file)),
+  path: options.file,
   absolutePath: path.join(motionDir, options.file),
   emotion: (options.emotion ?? 'neutral').toLowerCase(),
 })
@@ -36,7 +37,7 @@ const baseSpeechSmall: ResolvedSpeechMotion = {
 
 const baseAction: ResolvedAction = {
   id: 'start',
-  path: '../example/motion/idle_talk.mp4',
+  path: 'idle_talk.mp4',
   absolutePath: path.join(motionDir, 'idle_talk.mp4'),
 }
 
@@ -45,13 +46,13 @@ const baseTransitions: ResolvedSpeechTransitions = {
     {
       id: 'idle-talk',
       emotion: 'neutral',
-      path: '../example/motion/idle_talk.mp4',
+      path: 'idle_talk.mp4',
       absolutePath: path.join(motionDir, 'idle_talk.mp4'),
     },
     {
       id: 'idle-talk-happy',
       emotion: 'happy',
-      path: '../example/motion/idle_talk.mp4',
+      path: 'idle_talk.mp4',
       absolutePath: path.join(motionDir, 'idle_talk.mp4'),
     },
   ],
@@ -59,13 +60,13 @@ const baseTransitions: ResolvedSpeechTransitions = {
     {
       id: 'talk-idle',
       emotion: 'neutral',
-      path: '../example/motion/talk_idle.mp4',
+      path: 'talk_idle.mp4',
       absolutePath: path.join(motionDir, 'talk_idle.mp4'),
     },
     {
       id: 'talk-idle-happy',
       emotion: 'happy',
-      path: '../example/motion/talk_idle.mp4',
+      path: 'talk_idle.mp4',
       absolutePath: path.join(motionDir, 'talk_idle.mp4'),
     },
   ],
@@ -132,9 +133,11 @@ const cloneConfig = (): ResolvedConfig => {
     server: { port: 4000 },
     characters,
     characterMap: new Map(characters.map((character) => [character.id, character])),
-    assets: {
-      tempDir: './tmp',
-      absoluteTempDir: assetsDir,
+    paths: {
+      projectRoot,
+      motionsDir: motionDir,
+      outputDir,
+      responsePathBase: undefined,
     },
   }
 }
@@ -147,7 +150,7 @@ export const createResolvedConfig = (overrides?: Partial<ResolvedConfig>): Resol
     ...overrides,
     server: overrides.server ?? config.server,
     characters: overrides.characters ?? config.characters,
-    assets: overrides.assets ?? config.assets,
+    paths: overrides.paths ?? config.paths,
   }
   merged.characterMap =
     overrides.characterMap ?? new Map(merged.characters.map((character) => [character.id, character]))
