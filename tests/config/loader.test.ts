@@ -10,10 +10,10 @@ describe('loadConfig', () => {
 
     const result = await loadConfig(configPath)
 
-    const character = result.characters[0]
-    expect(character.actions[0].absolutePath).toBe(path.resolve(process.cwd(), 'motions/idle_talk.mp4'))
-    expect(character.idleMotions.large[0].emotion).toBe('neutral')
-    expect(result.characterMap.get(character.id)).toBe(character)
+    const preset = result.presets[0]
+    expect(preset.actions[0].absolutePath).toBe(path.resolve(process.cwd(), 'motions/idle_talk.mp4'))
+    expect(preset.idleMotions.large[0].emotion).toBe('neutral')
+    expect(result.presetMap.get(preset.id)).toBe(preset)
     expect(result.paths.outputDir).toBe(path.resolve(process.cwd(), 'output'))
     expect(result.paths.motionsDir).toBe(path.resolve(process.cwd(), 'motions'))
     expect(mkdirSpy).toHaveBeenCalled()

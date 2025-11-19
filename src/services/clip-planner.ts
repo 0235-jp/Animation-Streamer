@@ -1,7 +1,7 @@
 import {
   ResolvedAction,
-  ResolvedCharacter,
   ResolvedIdleMotion,
+  ResolvedPreset,
   ResolvedSpeechMotion,
   type ResolvedSpeechPools,
   type ResolvedTransitionMotion,
@@ -27,7 +27,7 @@ const MAX_REPEAT_CLIPS = 1000 // prevent runaway loops when repeating a single c
 
 const normalizeEmotion = (value?: string) => value?.trim().toLowerCase()
 
-interface CharacterClipResources {
+interface PresetClipResources {
   speechPools: Map<
     string,
     {
@@ -42,25 +42,25 @@ interface CharacterClipResources {
 }
 
 export class ClipPlanner {
-  private readonly characterResources: Map<string, CharacterClipResources>
+  private readonly presetResources: Map<string, PresetClipResources>
 
-  constructor(private readonly mediaPipeline: MediaPipeline, characters: ResolvedCharacter[]) {
-    this.characterResources = new Map(
-      characters.map((character) => [
-        character.id,
+  constructor(private readonly mediaPipeline: MediaPipeline, presets: ResolvedPreset[]) {
+    this.presetResources = new Map(
+      presets.map((preset) => [
+        preset.id,
         {
-          speechPools: this.buildSpeechPools(character.speechMotions),
-          idleLarge: character.idleMotions.large,
-          idleSmall: character.idleMotions.small,
-          speechEnterTransitions: this.buildTransitionMap(character.speechTransitions?.enter),
-          speechExitTransitions: this.buildTransitionMap(character.speechTransitions?.exit),
+          speechPools: this.buildSpeechPools(preset.speechMotions),
+          idleLarge: preset.idleMotions.large,
+          idleSmall: preset.idleMotions.small,
+          speechEnterTransitions: this.buildTransitionMap(preset.speechTransitions?.enter),
+          speechExitTransitions: this.buildTransitionMap(preset.speechTransitions?.exit),
         },
       ])
     )
   }
 
-  async buildSpeechPlan(characterId: string, emotion: string | undefined, durationMs: number): Promise<ClipPlanResult> {
-    const resources = this.getCharacterResources(characterId)
+  async buildSpeechPlan(presetId: string, emotion: string | undefined, durationMs: number): Promise<ClipPlanResult> {
+    const resources = this.getPresetResources(presetId)
     const normalizedEmotion = normalizeEmotion(emotion)
     const corePlan = await this.buildSpeechCorePlan(resources, normalizedEmotion, durationMs)
 
@@ -98,13 +98,8 @@ export class ClipPlanner {
     }
   }
 
-  async buildIdlePlan(
-    characterId: string,
-    durationMs: number,
-    motionId?: string,
-    emotion?: string
-  ): Promise<ClipPlanResult> {
-    const resources = this.getCharacterResources(characterId)
+  async buildIdlePlan(presetId: string, durationMs: number, motionId?: string, emotion?: string): Promise<ClipPlanResult> {
+    const resources = this.getPresetResources(presetId)
     const normalizedEmotion = normalizeEmotion(emotion)
     if (motionId) {
       const motion = [...resources.idleLarge, ...resources.idleSmall].find((m) => m.id === motionId)
@@ -138,10 +133,10 @@ export class ClipPlanner {
     }
   }
 
-  private getCharacterResources(characterId: string): CharacterClipResources {
-    const resources = this.characterResources.get(characterId)
+  private getPresetResources(presetId: string): PresetClipResources {
+    const resources = this.presetResources.get(presetId)
     if (!resources) {
-      throw new Error(`characterId=${characterId} のモーションが見つかりません`)
+      throw new Error(`presetId=${presetId} のモーションが見つかりません`)
     }
     return resources
   }

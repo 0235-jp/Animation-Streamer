@@ -6,17 +6,17 @@ describe('generateRequestSchema', () => {
   it('accepts minimal valid payload', () => {
     expect(() =>
       generateRequestSchema.parse({
-        characterId: 'anchor-a',
+        presetId: 'anchor-a',
         requests: [{ action: 'speak' }],
       })
     ).not.toThrow()
   })
 
   it('rejects payloads without requests', () => {
-    expect(() => generateRequestSchema.parse({ characterId: 'anchor-a' })).toThrow(ZodError)
+    expect(() => generateRequestSchema.parse({ presetId: 'anchor-a' })).toThrow(ZodError)
   })
 
-  it('rejects payloads without characterId', () => {
+  it('rejects payloads without presetId', () => {
     expect(() =>
       generateRequestSchema.parse({
         requests: [{ action: 'idle', params: { durationMs: 500 } }],
@@ -27,7 +27,7 @@ describe('generateRequestSchema', () => {
   it('validates defaults types and reports issues structure', () => {
     try {
       generateRequestSchema.parse({
-        characterId: 'anchor-a',
+        presetId: 'anchor-a',
         defaults: { emotion: 123 },
         requests: [{ action: 'idle', params: { durationMs: 1000 } }],
       })

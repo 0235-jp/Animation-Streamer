@@ -46,7 +46,7 @@ export const audioProfileSchema = synthesisParamsSchema.extend({
   voices: z.array(voicevoxVoiceSchema).optional(),
 })
 
-const characterSchema = z.object({
+const presetSchema = z.object({
   id: z.string().min(1),
   displayName: z.string().min(1).optional(),
   actions: z.array(actionSchema).default([]),
@@ -69,7 +69,7 @@ export const configSchema = z.object({
       apiKey: z.string().min(1).optional(),
     })
     .default({ port: 4000, host: 'localhost' }),
-  characters: z.array(characterSchema).min(1),
+  presets: z.array(presetSchema).min(1),
 })
 
 export type StreamerConfig = z.infer<typeof configSchema>

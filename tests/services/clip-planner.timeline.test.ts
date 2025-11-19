@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ClipPlanner } from '../../src/services/clip-planner'
 import type {
   ResolvedAudioProfile,
-  ResolvedCharacter,
+  ResolvedPreset,
   ResolvedIdleMotion,
   ResolvedSpeechMotion,
   ResolvedIdlePools,
@@ -107,8 +107,8 @@ const createPlanner = () => {
     },
     voices: [],
   }
-  const character: ResolvedCharacter = {
-    id: 'test-character',
+  const preset: ResolvedPreset = {
+    id: 'test-preset',
     displayName: 'Test',
     actions: [],
     actionsMap: new Map(),
@@ -117,8 +117,8 @@ const createPlanner = () => {
     speechTransitions,
     audioProfile,
   }
-  const planner = new ClipPlanner(mediaPipeline as MediaPipeline, [character])
-  return { planner, character }
+  const planner = new ClipPlanner(mediaPipeline as MediaPipeline, [preset])
+  return { planner, preset }
 }
 
 describe('ClipPlanner timeline edge cases', () => {
@@ -131,10 +131,10 @@ describe('ClipPlanner timeline edge cases', () => {
   })
 
   it('falls back to neutral speech transitions when requested emotion is missing', async () => {
-    const { planner, character } = createPlanner()
+    const { planner, preset } = createPlanner()
     const mathSpy = vi.spyOn(Math, 'random').mockReturnValue(0)
 
-    const plan = await planner.buildSpeechPlan(character.id, 'angry', 900)
+    const plan = await planner.buildSpeechPlan(preset.id, 'angry', 900)
 
     const speechIds = plan.motionIds.filter((id) => id.includes('speech'))
     expect(speechIds.every((id) => id.includes('neutral'))).toBe(true)
@@ -146,9 +146,9 @@ describe('ClipPlanner timeline edge cases', () => {
   })
 
   it('uses emotion-specific transitions when configured', async () => {
-    const { planner, character } = createPlanner()
+    const { planner, preset } = createPlanner()
 
-    const plan = await planner.buildSpeechPlan(character.id, 'happy', 700)
+    const plan = await planner.buildSpeechPlan(preset.id, 'happy', 700)
 
     expect(plan.motionIds.at(0)).toBe('enter-transition-happy')
     expect(plan.motionIds.at(-1)).toBe('exit-transition-happy')
@@ -160,8 +160,8 @@ describe('ClipPlanner timeline edge cases', () => {
   })
 
   it('prefers small pool when remaining duration is shorter than large clips', async () => {
-    const { planner, character } = createPlanner()
-    const plan = await planner.buildSpeechPlan(character.id, 'happy', 250)
+    const { planner, preset } = createPlanner()
+    const plan = await planner.buildSpeechPlan(preset.id, 'happy', 250)
 
     const speechIds = plan.motionIds.filter((id) => id.includes('speech'))
     expect(speechIds.every((id) => id === 'speech-happy-small')).toBe(true)
@@ -169,17 +169,17 @@ describe('ClipPlanner timeline edge cases', () => {
   })
 
   it('filters idle motions by emotion and falls back when none match', async () => {
-    const { planner, character } = createPlanner()
-    const happyPlan = await planner.buildIdlePlan(character.id, 400, undefined, 'happy')
+    const { planner, preset } = createPlanner()
+    const happyPlan = await planner.buildIdlePlan(preset.id, 400, undefined, 'happy')
     expect(new Set(happyPlan.motionIds)).toEqual(new Set(['idle-neutral-small', 'idle-happy-small']))
 
-    const fallbackPlan = await planner.buildIdlePlan(character.id, 400, undefined, 'sad')
+    const fallbackPlan = await planner.buildIdlePlan(preset.id, 400, undefined, 'sad')
     expect(fallbackPlan.motionIds.some((id) => id.includes('neutral'))).toBe(true)
   })
 
   it('uses explicit motion id even when emotion differs', async () => {
-    const { planner, character } = createPlanner()
-    const plan = await planner.buildIdlePlan(character.id, 1200, 'idle-neutral-large', 'happy')
+    const { planner, preset } = createPlanner()
+    const plan = await planner.buildIdlePlan(preset.id, 1200, 'idle-neutral-large', 'happy')
 
     expect(plan.motionIds.every((id) => id === 'idle-neutral-large')).toBe(true)
     expect(plan.totalDurationMs).toBeGreaterThanOrEqual(1200)

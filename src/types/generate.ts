@@ -9,7 +9,7 @@ export interface GenerateRequestItem {
 }
 
 export interface GenerateRequestPayload {
-  characterId: string
+  presetId: string
   stream?: boolean
   defaults?: GenerateDefaults
   requests: GenerateRequestItem[]

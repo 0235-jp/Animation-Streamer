@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 export const generateRequestSchema = z.object({
-  characterId: z.string().min(1),
+  presetId: z.string().min(1),
   stream: z.boolean().optional(),
   defaults: z
     .object({
