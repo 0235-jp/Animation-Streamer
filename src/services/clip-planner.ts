@@ -142,7 +142,7 @@ export class ClipPlanner {
   }
 
   private async buildSpeechCorePlan(
-    resources: CharacterClipResources,
+    resources: PresetClipResources,
     normalizedEmotion: string | undefined,
     durationMs: number
   ): Promise<ClipPlanResult> {
