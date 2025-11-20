@@ -17,7 +17,7 @@ export const createApp = async (options: CreateAppOptions = {}) => {
   const config = await loadConfig(configPath)
 
   const mediaPipeline = new MediaPipeline(config.paths.outputDir)
-  const clipPlanner = new ClipPlanner(mediaPipeline, config.characters)
+  const clipPlanner = new ClipPlanner(mediaPipeline, config.presets)
   const voicevox = new VoicevoxClient()
   const generationService = new GenerationService({
     config,

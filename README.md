@@ -2,6 +2,8 @@
 
 音声合成(TTS)とモーション動画を組み合わせ、待機状態から発話→待機へシームレスに繋がるクリップを生成するためのローカルAPIサーバーです。
 
+本プロジェクトはアルファ版です。各バージョンでインタフェースが後方互換なく変更される可能性があるためご注意ください。
+
 ## 必要環境
 - Node.js 20 以上
 - ffmpeg / ffprobe
@@ -61,7 +63,7 @@ curl -X POST http://localhost:4000/api/generate \
   -d '{
     "stream": false,
     "debug": true,
-    "characterId": "anchor-a",
+    "presetId": "anchor-a",
     "requests": [
       { "action": "start" },
       { "action": "speak", "params": { "text": "こんにちは", "emotion": "happy" } },
@@ -72,7 +74,7 @@ curl -X POST http://localhost:4000/api/generate \
 ```
 
 `stream=false` の場合は `combined.outputPath` に 1 本にまとめたMP4パスが返却されます。 `stream=true` を指定すると各アクション完了ごとに NDJSON でレスポンスがストリーミングされます。  
-`characterId` はリクエスト直下で **必須** 指定です（すべてのアクションが同一キャラクターを参照します）。  
+`presetId` はリクエスト直下で **必須** 指定です（すべてのアクションが同一プリセットを参照します）。  
 `server.apiKey` を設定した場合は `-H 'X-API-Key: <your-key>'` を付与してください。
 
 
@@ -80,13 +82,13 @@ curl -X POST http://localhost:4000/api/generate \
 `config/stream-profile.json` でモーション動画や VOICEVOX エンドポイントなどを定義します。主な項目は以下の通りです。
 
 - server.port / server.host / server.apiKey: API の待受ポート・ホスト・APIキー。
-- characters: キャラクターごとの設定配列。最低1件登録し、APIからは `characterId` で参照します。
-  - id / displayName: キャラクター識別子と任意の表示名。
-  - actions: キャラクター固有のカスタムアクション群（`speak`/`idle` は予約語のため不可）。`id` は `requests[].action` に指定し、`path` は `motions/` からの相対パス（例: `talk_idle.mp4` や `dir_name/talk_idle.mp4`）です。
+- presets: キャラクターのプリセット定義配列。最低1件登録し、APIからは `presetId` で参照します。
+  - id / displayName: プリセット識別子と任意の表示名。
+  - actions: プリセット固有のカスタムアクション群（`speak`/`idle` は予約語のため不可）。`id` は `requests[].action` に指定し、`path` は `motions/` からの相対パス（例: `talk_idle.mp4` や `dir_name/talk_idle.mp4`）です。
   - idleMotions / speechMotions: 待機・発話モーションのプール。`large`/`small` と emotion ごとに最適なクリップを選択し、`motionId` で直接指定もできます。
   - speechTransitions (任意): `speak` の前後に自動で差し込む導入/締めモーション。emotion が一致しない場合は `neutral` → その他の順でフォールバックします。
-  - audioProfile: キャラクター単位の VOICEVOX 接続設定。`voicevoxUrl` や話者 ID、emotion 別の `voices[]` を定義できます。
+  - audioProfile: プリセット単位の VOICEVOX 接続設定。`voicevoxUrl` や話者 ID、emotion 別の `voices[]` を定義できます。
   - モーション動画は `motions/` 以下にまとまっている想定です。設定ファイルからは接頭辞なしの `motions/` 内相対パスで参照し、Docker では `./motions:/app/motions:ro` をマウントして同じパス構成を維持します。
 - 出力ファイルは常にプロジェクト直下の `output/` に保存されます（設定不要）。Docker では `./output:/app/output` をマウントし、`RESPONSE_PATH_BASE` にホスト側 `output` の絶対パスを渡すことで API レスポンスにホスト上のパスを返せます。
 
-`config/example.stream-profile.docker.json` / `config/example.stream-profile.local.json` には Anchor のサンプルが含まれているので、必要に応じて `characters[]` を増やし、`characterId` を切り替えて利用してください。
+`config/example.stream-profile.docker.json` / `config/example.stream-profile.local.json` には Anchor のサンプルが含まれているので、必要に応じて `presets[]` を増やし、`presetId` を切り替えて利用してください。

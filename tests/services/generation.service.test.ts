@@ -34,7 +34,7 @@ const createClipPlan = (overrides?: Partial<ClipPlanResult>): ClipPlanResult => 
   ...overrides,
 })
 
-const DEFAULT_CHARACTER_ID = 'anchor-a'
+const DEFAULT_PRESET_ID = 'anchor-a'
 
 const createService = (configOverride?: ResolvedConfig) => {
   const clipPlanner = {
@@ -76,10 +76,10 @@ const createService = (configOverride?: ResolvedConfig) => {
   return { service, clipPlanner, mediaPipeline, voicevox, config }
 }
 
-const withCharacter = (
-  payload: Omit<GenerateRequestPayload, 'characterId'> & { characterId?: string }
+const withPreset = (
+  payload: Omit<GenerateRequestPayload, 'presetId'> & { presetId?: string }
 ): GenerateRequestPayload => ({
-  characterId: payload.characterId ?? DEFAULT_CHARACTER_ID,
+  presetId: payload.presetId ?? DEFAULT_PRESET_ID,
   ...payload,
 })
 
@@ -91,7 +91,7 @@ describe('GenerationService', () => {
 
   it('returns combined batch result for non-stream payloads', async () => {
     const { service, clipPlanner, mediaPipeline, voicevox } = createService()
-    const payload = withCharacter({
+    const payload = withPreset({
       stream: false,
       requests: [
         { action: 'speak', params: { text: 'こんにちは' } },
@@ -118,7 +118,7 @@ describe('GenerationService', () => {
 
   it('selects emotion-specific TTS profile when available', async () => {
     const { service, voicevox } = createService()
-    const payload = withCharacter({
+    const payload = withPreset({
       stream: false,
       requests: [{ action: 'speak', params: { text: 'やっほー', emotion: 'happy' } }],
     })
@@ -135,8 +135,8 @@ describe('GenerationService', () => {
 
   it('falls back to default TTS profile when emotion and neutral overrides are unavailable', async () => {
     const customConfig = createResolvedConfig()
-    customConfig.characters[0].audioProfile = {
-      ...customConfig.characters[0].audioProfile,
+    customConfig.presets[0].audioProfile = {
+      ...customConfig.presets[0].audioProfile,
       voices: [
         {
           emotion: 'sad',
@@ -150,9 +150,9 @@ describe('GenerationService', () => {
         volumeScale: 0.7,
       },
     }
-    customConfig.characterMap.set(customConfig.characters[0].id, customConfig.characters[0])
+    customConfig.presetMap.set(customConfig.presets[0].id, customConfig.presets[0])
     const { service, voicevox } = createService(customConfig)
-    const payload = withCharacter({
+    const payload = withPreset({
       stream: false,
       requests: [{ action: 'speak', params: { text: 'fallback test', emotion: 'angry' } }],
     })
@@ -169,7 +169,7 @@ describe('GenerationService', () => {
 
   it('includes aggregated motionIds in combined result when debug flag is true', async () => {
     const { service } = createService()
-    const payload = withCharacter({
+    const payload = withPreset({
       debug: true,
       requests: [
         { action: 'speak', params: { text: 'clip' } },
@@ -186,7 +186,7 @@ describe('GenerationService', () => {
   it('streams action results when stream=true and invokes handler callbacks', async () => {
     const { service } = createService()
     const handler = { onResult: vi.fn() }
-    const payload = withCharacter({
+    const payload = withPreset({
       stream: true,
       requests: [{ action: 'idle', params: { durationMs: 400 } }],
     })
@@ -202,7 +202,7 @@ describe('GenerationService', () => {
 
   it('exposes motionIds for streaming results when debug flag is true', async () => {
     const { service } = createService()
-    const payload = withCharacter({
+    const payload = withPreset({
       stream: true,
       debug: true,
       requests: [{ action: 'idle', params: { durationMs: 400 } }],
@@ -222,9 +222,9 @@ describe('GenerationService', () => {
         responsePathBase: '/host/output',
       },
     })
-    customConfig.characterMap.set(customConfig.characters[0].id, customConfig.characters[0])
+    customConfig.presetMap.set(customConfig.presets[0].id, customConfig.presets[0])
     const { service } = createService(customConfig)
-    const payload = withCharacter({
+    const payload = withPreset({
       stream: false,
       requests: [{ action: 'idle', params: { durationMs: 400 } }],
     })
@@ -237,7 +237,7 @@ describe('GenerationService', () => {
 
   it('pads speech audio with silent segments when transitions are present', async () => {
     const { service, mediaPipeline } = createService()
-    const payload = withCharacter({
+    const payload = withPreset({
       requests: [{ action: 'speak', params: { text: 'transition test' } }],
     })
 
@@ -251,7 +251,7 @@ describe('GenerationService', () => {
 
   it('trims normalized audio before measuring duration and fitting talk segments', async () => {
     const { service, mediaPipeline } = createService()
-    const payload = withCharacter({
+    const payload = withPreset({
       requests: [{ action: 'speak', params: { text: 'trim me' } }],
     })
 
@@ -273,7 +273,7 @@ describe('GenerationService', () => {
     const { service, voicevox } = createService()
     voicevox.synthesize.mockRejectedValue(new Error('VOICEVOX failure'))
 
-    const payload = withCharacter({
+    const payload = withPreset({
       stream: true,
       requests: [{ action: 'speak', params: { text: 'error' } }],
     })
@@ -289,7 +289,7 @@ describe('GenerationService', () => {
     const { service, clipPlanner, mediaPipeline } = createService()
     clipPlanner.buildSpeechPlan.mockRejectedValue(new Error('bad plan'))
 
-    const payload = withCharacter({
+    const payload = withPreset({
       requests: [{ action: 'speak', params: { text: 'hello' } }],
     })
 
@@ -299,12 +299,12 @@ describe('GenerationService', () => {
 
   it('throws ActionProcessingError for undefined custom actions', async () => {
     const { service } = createService()
-    const payload = withCharacter({
+    const payload = withPreset({
       requests: [{ action: 'wave' }],
     })
 
     await expect(service.processBatch(payload)).rejects.toMatchObject({
-      message: expect.stringContaining('characterId=anchor-a'),
+      message: expect.stringContaining('presetId=anchor-a'),
       statusCode: 400,
     })
   })
@@ -313,7 +313,7 @@ describe('GenerationService', () => {
     const { service, mediaPipeline } = createService()
     mediaPipeline.extractAudioTrack.mockRejectedValue(new NoAudioTrackError('/tmp/action.mp4'))
 
-    const payload = withCharacter({
+    const payload = withPreset({
       requests: [{ action: 'start' }],
     })
 
@@ -325,7 +325,7 @@ describe('GenerationService', () => {
 
   it('validates speak params and surfaces ActionProcessingError when text is missing', async () => {
     const { service } = createService()
-    const payload = withCharacter({
+    const payload = withPreset({
       stream: false,
       requests: [{ action: 'speak', params: {} }],
     })
@@ -338,7 +338,7 @@ describe('GenerationService', () => {
 
   it('validates idle params and rejects non-positive duration', async () => {
     const { service } = createService()
-    const payload = withCharacter({
+    const payload = withPreset({
       requests: [{ action: 'idle', params: { durationMs: 0 } }],
     })
 
@@ -350,31 +350,31 @@ describe('GenerationService', () => {
 
   it('applies defaults for idle motion id when params omit overrides', async () => {
     const { service, clipPlanner } = createService()
-    const payload = withCharacter({
+    const payload = withPreset({
       defaults: { idleMotionId: 'idle-large' },
       requests: [{ action: 'idle', params: { durationMs: 700 } }],
     })
 
     await service.processBatch(payload)
 
-    expect(clipPlanner.buildIdlePlan).toHaveBeenCalledWith(DEFAULT_CHARACTER_ID, expect.any(Number), 'idle-large', undefined)
+    expect(clipPlanner.buildIdlePlan).toHaveBeenCalledWith(DEFAULT_PRESET_ID, expect.any(Number), 'idle-large', undefined)
   })
 
   it('uses defaults emotion for speak actions when params omit emotion', async () => {
     const { service, clipPlanner } = createService()
-    const payload = withCharacter({
+    const payload = withPreset({
       defaults: { emotion: 'happy' },
       requests: [{ action: 'speak', params: { text: 'default emotion' } }],
     })
 
     await service.processBatch(payload)
 
-    expect(clipPlanner.buildSpeechPlan).toHaveBeenCalledWith(DEFAULT_CHARACTER_ID, 'happy', expect.any(Number))
+    expect(clipPlanner.buildSpeechPlan).toHaveBeenCalledWith(DEFAULT_PRESET_ID, 'happy', expect.any(Number))
   })
 
   it('assigns sequential string ids to streaming results', async () => {
     const { service } = createService()
-    const payload = withCharacter({
+    const payload = withPreset({
       stream: true,
       requests: [
         { action: 'idle', params: { durationMs: 300 } },
@@ -390,8 +390,8 @@ describe('GenerationService', () => {
 
   it('prevents registering reserved action ids for custom actions', async () => {
     const { service } = createService()
-    const character = (service as any).config.characters[0]
-    await expect((service as any).buildCustomActionPlanData(character, { action: 'speak' }, '1')).rejects.toThrow('予約語')
+    const preset = (service as any).config.presets[0]
+    await expect((service as any).buildCustomActionPlanData(preset, { action: 'speak' }, '1')).rejects.toThrow('予約語')
   })
 
   it('builds combined timeline preserving clip order and total duration', async () => {
@@ -423,7 +423,7 @@ describe('GenerationService', () => {
       })
     )
 
-    const payload = withCharacter({
+    const payload = withPreset({
       requests: [
         { action: 'speak', params: { text: 'hello' } },
         { action: 'idle', params: { durationMs: 300 } },
