@@ -24,7 +24,7 @@ paths:
               -d '{
                 "stream": false,
                 "debug": true,
-                "characterId": "anchor-a",
+                "presetId": "anchor-a",
                 "requests": [
                   { "action": "start" },
                   { "action": "speak", "params": { "text": "こんにちは", "emotion": "happy" } },
@@ -44,7 +44,7 @@ paths:
                 value:
                   stream: false
                   debug: true
-                  characterId: "anchor-a"
+                  presetId: "anchor-a"
                   requests:
                     - action: "start"
                     - action: "speak"
@@ -95,12 +95,12 @@ components:
     GenerateRequest:
       type: object
       required:
-        - characterId
+        - presetId
         - requests
       properties:
-        characterId:
+        presetId:
           type: string
-          description: 使用するキャラクターID（バッチ全体で1つ）
+          description: 使用するプリセットID（バッチ全体で1つ）
         stream:
           type: boolean
           description: Whether to stream results as NDJSON
@@ -118,7 +118,7 @@ components:
           minItems: 1
           items:
             $ref: '#/components/schemas/ActionRequest'
-          description: Server processes actions in array order and auto-assigns ids (1,2,...) in responses. `characterId` はリクエスト直下で指定し、バッチ内の全アクションが同じキャラクターを参照する。
+          description: Server processes actions in array order and auto-assigns ids (1,2,...) in responses. `presetId` はリクエスト直下で指定し、バッチ内の全アクションが同じプリセットを参照する。
         metadata:
           type: object
           additionalProperties: true

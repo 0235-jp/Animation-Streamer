@@ -59,7 +59,7 @@ export interface ResolvedAudioProfile {
   voices: VoicevoxVoiceProfile[]
 }
 
-export interface ResolvedCharacter {
+export interface ResolvedPreset {
   id: string
   displayName?: string
   actions: ResolvedAction[]
@@ -77,9 +77,9 @@ export interface ResolvedPaths {
   responsePathBase?: string
 }
 
-export interface ResolvedConfig extends Omit<StreamerConfig, 'characters'> {
-  characters: ResolvedCharacter[]
-  characterMap: Map<string, ResolvedCharacter>
+export interface ResolvedConfig extends Omit<StreamerConfig, 'presets'> {
+  presets: ResolvedPreset[]
+  presetMap: Map<string, ResolvedPreset>
   paths: ResolvedPaths
 }
 
@@ -99,19 +99,19 @@ export const loadConfig = async (configPath: string): Promise<ResolvedConfig> =>
   const responsePathBase = process.env.RESPONSE_PATH_BASE?.trim() || undefined
   const resolveMotionPath = createMotionResolver(motionsDir)
 
-  const characters = parsed.characters.map((character) => resolveCharacter(character, resolveMotionPath))
-  const characterMap = new Map<string, ResolvedCharacter>()
-  for (const character of characters) {
-    if (characterMap.has(character.id)) {
-      throw new Error(`Duplicate character id detected: ${character.id}`)
+  const presets = parsed.presets.map((preset) => resolvePreset(preset, resolveMotionPath))
+  const presetMap = new Map<string, ResolvedPreset>()
+  for (const preset of presets) {
+    if (presetMap.has(preset.id)) {
+      throw new Error(`Duplicate preset id detected: ${preset.id}`)
     }
-    characterMap.set(character.id, character)
+    presetMap.set(preset.id, preset)
   }
 
   return {
     server: parsed.server,
-    characters,
-    characterMap,
+    presets,
+    presetMap,
     paths: {
       projectRoot,
       motionsDir,
@@ -121,23 +121,23 @@ export const loadConfig = async (configPath: string): Promise<ResolvedConfig> =>
   }
 }
 
-const resolveCharacter = (
-  character: StreamerConfig['characters'][number],
+const resolvePreset = (
+  preset: StreamerConfig['presets'][number],
   resolveMotionPath: (assetPath: string) => string
-): ResolvedCharacter => {
-  const actions: ResolvedAction[] = character.actions.map((action) => ({
+): ResolvedPreset => {
+  const actions: ResolvedAction[] = preset.actions.map((action) => ({
     ...action,
     absolutePath: resolveMotionPath(action.path),
   }))
 
   const idleMotions: ResolvedIdlePools = {
-    large: character.idleMotions.large.map((motion) => ({
+    large: preset.idleMotions.large.map((motion) => ({
       ...motion,
       type: 'large' as const,
       emotion: motion.emotion.toLowerCase(),
       absolutePath: resolveMotionPath(motion.path),
     })),
-    small: character.idleMotions.small.map((motion) => ({
+    small: preset.idleMotions.small.map((motion) => ({
       ...motion,
       type: 'small' as const,
       emotion: motion.emotion.toLowerCase(),
@@ -146,13 +146,13 @@ const resolveCharacter = (
   }
 
   const speechMotions: ResolvedSpeechPools = {
-    large: character.speechMotions.large.map((motion) => ({
+    large: preset.speechMotions.large.map((motion) => ({
       ...motion,
       type: 'large' as const,
       emotion: motion.emotion.toLowerCase(),
       absolutePath: resolveMotionPath(motion.path),
     })),
-    small: character.speechMotions.small.map((motion) => ({
+    small: preset.speechMotions.small.map((motion) => ({
       ...motion,
       type: 'small' as const,
       emotion: motion.emotion.toLowerCase(),
@@ -174,10 +174,10 @@ const resolveCharacter = (
     return list.map(normalizeTransition)
   }
 
-  const speechTransitions: ResolvedSpeechTransitions | undefined = character.speechTransitions
+  const speechTransitions: ResolvedSpeechTransitions | undefined = preset.speechTransitions
     ? {
-        enter: toTransitionList(character.speechTransitions.enter),
-        exit: toTransitionList(character.speechTransitions.exit),
+        enter: toTransitionList(preset.speechTransitions.enter),
+        exit: toTransitionList(preset.speechTransitions.exit),
       }
     : undefined
 
@@ -189,30 +189,30 @@ const resolveCharacter = (
 
   const defaultVoice = normalizeVoice({
     emotion: 'neutral',
-    speakerId: character.audioProfile.speakerId,
-    speedScale: character.audioProfile.speedScale,
-    pitchScale: character.audioProfile.pitchScale,
-    intonationScale: character.audioProfile.intonationScale,
-    volumeScale: character.audioProfile.volumeScale,
-    outputSamplingRate: character.audioProfile.outputSamplingRate,
-    outputStereo: character.audioProfile.outputStereo,
+    speakerId: preset.audioProfile.speakerId,
+    speedScale: preset.audioProfile.speedScale,
+    pitchScale: preset.audioProfile.pitchScale,
+    intonationScale: preset.audioProfile.intonationScale,
+    volumeScale: preset.audioProfile.volumeScale,
+    outputSamplingRate: preset.audioProfile.outputSamplingRate,
+    outputStereo: preset.audioProfile.outputStereo,
   })
 
-  const voices = (character.audioProfile.voices ?? []).map(normalizeVoice)
+  const voices = (preset.audioProfile.voices ?? []).map(normalizeVoice)
 
   const actionsMap = new Map(actions.map((action) => [action.id.toLowerCase(), action]))
 
   return {
-    id: character.id,
-    displayName: character.displayName,
+    id: preset.id,
+    displayName: preset.displayName,
     actions,
     actionsMap,
     idleMotions,
     speechMotions,
     speechTransitions,
     audioProfile: {
-      ttsEngine: character.audioProfile.ttsEngine,
-      voicevoxUrl: character.audioProfile.voicevoxUrl,
+      ttsEngine: preset.audioProfile.ttsEngine,
+      voicevoxUrl: preset.audioProfile.voicevoxUrl,
       defaultVoice,
       voices,
     },

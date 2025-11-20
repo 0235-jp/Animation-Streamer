@@ -2,7 +2,7 @@ import path from 'node:path'
 import type {
   ResolvedAction,
   ResolvedAudioProfile,
-  ResolvedCharacter,
+  ResolvedPreset,
   ResolvedConfig,
   ResolvedIdleMotion,
   ResolvedSpeechMotion,
@@ -99,7 +99,7 @@ const baseAudioProfile: ResolvedAudioProfile = {
   ],
 }
 
-const createCharacter = (): ResolvedCharacter => {
+const createPreset = (): ResolvedPreset => {
   const actions: ResolvedAction[] = [baseAction].map((action) => ({ ...action }))
   const actionsMap = new Map(actions.map((action) => [action.id.toLowerCase(), action]))
   return {
@@ -128,11 +128,11 @@ const createCharacter = (): ResolvedCharacter => {
 }
 
 const cloneConfig = (): ResolvedConfig => {
-  const characters = [createCharacter()]
+  const presets = [createPreset()]
   return {
     server: { port: 4000 },
-    characters,
-    characterMap: new Map(characters.map((character) => [character.id, character])),
+    presets,
+    presetMap: new Map(presets.map((preset) => [preset.id, preset])),
     paths: {
       projectRoot,
       motionsDir: motionDir,
@@ -149,10 +149,9 @@ export const createResolvedConfig = (overrides?: Partial<ResolvedConfig>): Resol
     ...config,
     ...overrides,
     server: overrides.server ?? config.server,
-    characters: overrides.characters ?? config.characters,
+    presets: overrides.presets ?? config.presets,
     paths: overrides.paths ?? config.paths,
   }
-  merged.characterMap =
-    overrides.characterMap ?? new Map(merged.characters.map((character) => [character.id, character]))
+  merged.presetMap = overrides.presetMap ?? new Map(merged.presets.map((preset) => [preset.id, preset]))
   return merged
 }
