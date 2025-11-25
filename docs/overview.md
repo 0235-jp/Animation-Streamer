@@ -9,7 +9,7 @@
 - `start`/`stop` エンドポイントを備えたNode.jsベースのローカルサーバー。
 - RTMP/HTTP-FLV配信を提供しOBSのメディアソースとして利用可能にする。
 - 待機モーションを複数登録し、各クリップ再生終了ごとにランダム切り替えでループ再生する仕組み。
-- `text` エンドポイントのインタフェースを先行定義（内部処理はTODO）。
+- `text` エンドポイントのインタフェースを配信用に定義し、`presetId` やアクション列を受けてストリームへ割り込ませる。
 - ストリームとは独立した `generate` エンドポイントを定義し、`speak`/`idle`/任意アクションを並べたJSONを受け取って順次クリップを生成する。`stream`フラグが `true` の場合はアクション完了ごとに結果をストリーミング返却、`false` の場合は一括返却。
 
 ## 技術選定
@@ -39,8 +39,8 @@ Controller     \                    /
 
 ## 主なコンポーネント
 - **Express API 層**: 認証(ローカルAPIキー想定)、入力バリデーション、`StreamService` 呼び出し。
-- **StreamService / StreamSession**: 状態遷移 (IDLE, IDLING, SPEECH, STOPPED) とプロセスハンドルを保持。待機ループの開始・停止、タスクキューへの操作口を提供。
-- **IdleLoopController**: 複数の待機モーションを管理。1つのffmpegプロセスに`concat`デマルチプレクサでプレイリストを流し込み、各動画の終了直前に次モーションをランダム選択して書き込むことでフレーム落ちなく切り替える。発話モーションも同じプレイリストに割り込み挿入し、待機→発話→待機の継ぎ目でフレームギャップを生まない。
+- **StreamService / StreamSession**: 状態遷移 (STOPPED, IDLE, SPEAK) とプロセスハンドルを保持。待機ループの開始・停止、タスクキューへの操作口を提供。
+- **IdleLoopController**: `idle.txt`（自己参照ループ）を常時入力にし、タスクごとに一時ffconcat（例: `speak-<task>.txt` で enter→speech→exit→idle戻り、`action-<task>.txt` で任意クリップ→idle戻り）を生成。`idle.txt` はキャラクターの `idleMotions`（Large/Small複数可）から ClipPlanner で一定長を埋める形で組み、タスク挿入時も同じIdleプランナーで前後のidleを並べる。`idle.txt` を一時ファイル経由で「数本のidle→タスクffconcat→idle自己参照」に書き換え、ffmpeg stderr でタスクffconcatのオープンを検知したら自己参照版へ復旧する。検知できない場合も総尺ベースのフォールバックタイマーでループに戻す。
 - **SpeechTaskQueue (将来実装)**: `text` APIから受けたタスクを受信順でFIFO管理。生成完了が前後しても再生順は保証する。
 - **GenerationService**: `POST /api/generate` のアクション列をバリデーションし、`stream` フラグに応じて逐次 or 一括レスポンスを返す。`speak`/`idle`/任意アクションごとにVOICEVOX→モーション合成を実行する。
 - **ClipPlanner**: `animation-streamer-example` に実装されている Large/Small clip allocation ロジックをサーバー側に移植。emotionやモーションタイプに応じて必要時間をカバーするクリップリストを決定する。
@@ -49,16 +49,24 @@ Controller     \                    /
 - **ConfigLoader**: JSONを読み込み、型チェック済みの設定オブジェクトをDIコンテナへ供給。
 
 ## リクエストフロー（start/stop）
-1. **POST /api/start**
-   - 状態がIDLE/STOPPEDなら待機ループを開始。
-   - `IdleLoopController` がffmpeg(`concat`入力)を起動し、最初の待機モーションをプレイリストに流し込む。
-   - レスポンスは現在の状態と使用中のモーションIDを返却。
-2. **POST /api/stop**
-   - 進行中の待機ループと（将来的に）音声タスクを停止し、ffmpeg子プロセスを終了。
+1. **POST /api/stream/start**
+   - Body: `{ "presetId": "required", "debug": false }`
+     - `presetId`: 使用キャラクター必須。
+     - `debug`: `true` で `output/stream` のファイル自動削除を無効化（デバッグ用）。
+   - 状態がSTOPPEDなら待機ループを開始（同一presetIdで既にIDLE状態なら冪等）。`IdleLoopController` が指定された `presetId` の `idleMotions`（Large/Small複数）から ClipPlanner で一定長の待機シーケンスを作り、現在のプリセット用 `idle.txt`（自己参照）を生成してffmpegを起動。`speak` や任意 `action` のタスクffconcatはリクエストが来たときにその都度一時生成して `idle.txt` に1回だけ挿入し、再生検知後に自己参照ループへ戻す。異常終了時は自動再起動し、RTMP 送出を継続する。
+   - レスポンスは現在の状態と使用中のモーションIDを返却。稼働中に別 `presetId` で再度 start が呼ばれた場合は同時別セッションを立てる想定のため、このストリームでは 409 などで拒否し、切り替えたい場合は stop→start で明示する。
+2. **POST /api/stream/stop**
+   - Body: `{}`。
+   - 進行中の待機ループと音声タスクを停止し、ffmpeg子プロセスを終了。
    - 一時ファイルなどをクリーンアップし、状態をSTOPPEDへ。
 
+## リクエストフロー（/api/stream/text - ストリーム割込み）
+1. **POST /api/stream/text**
+   - リクエスト形式は `/api/generate` と同じ（`presetId` / `requests[]` のアクション列）。`speak`/`idle`/任意 `action` を含む複数アクションの並びをストリーム再生タスクとしてキューに積む。
+   - `SpeechTaskQueue` にタスクを積み、`IdleLoopController` が各タスクのffconcat（例: enter→speech→exit→idle戻り or 任意action→idle戻り）を一時生成して `idle.txt` に1回だけ挿入し再生する。
+
 ## リクエストフロー（generate）
-1. クライアントは `presetId`, `stream`, `defaults`, `requests[]` を含むJSONをPOST（例: Section「Generateアクションリクエスト」参照）。
+1. クライアントは `presetId`, `stream`, `requests[]` を含むJSONをPOST（例: Section「Generateアクションリクエスト」参照）。
 2. `GenerationService` がアクションを先頭から順次処理。
    - `speak`: VOICEVOXで音声合成 → ClipPlannerが emotion + Large/Small で発話モーションを決定 → `MediaPipeline` が concat + AAC でmp4を出力。キャラクター固有の `speechTransitions` があれば自動で差し込む。
    - `idle`: `durationMs` を満たすまでキャラクターの待機モーションをLarge優先で並べ、無音AACと多重化。
@@ -69,10 +77,9 @@ Controller     \                    /
 
 ## 状態遷移
 ```
-IDLE --start--> IDLING --text--> SPEECH --(speech done)--> IDLING
-IDLING --stop--> STOPPED
-SPEECH --stop--> STOPPED
-STOPPED --start--> IDLING
+STOPPED --start--> IDLE --text--> SPEAK --(task done)--> IDLE
+IDLE --stop--> STOPPED
+SPEAK --stop--> STOPPED
 ```
 
 ## Generateアクションリクエスト

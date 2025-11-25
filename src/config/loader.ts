@@ -81,6 +81,9 @@ export interface ResolvedConfig extends Omit<StreamerConfig, 'presets'> {
   presets: ResolvedPreset[]
   presetMap: Map<string, ResolvedPreset>
   paths: ResolvedPaths
+  rtmp: {
+    outputUrl: string
+  }
 }
 
 export const loadConfig = async (configPath: string): Promise<ResolvedConfig> => {
@@ -110,6 +113,7 @@ export const loadConfig = async (configPath: string): Promise<ResolvedConfig> =>
 
   return {
     server: parsed.server,
+    rtmp: parsed.rtmp,
     presets,
     presetMap,
     paths: {

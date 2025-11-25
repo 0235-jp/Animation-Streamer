@@ -27,6 +27,7 @@
   "homepage": "https://github.com/0235-jp/Animation-Streamer#readme",
   "dependencies": {
     "express": "^5.1.0",
+    "node-media-server": "^2.4.12",
     "pino": "^10.1.0",
     "swagger-ui-express": "^5.0.1",
     "undici": "^7.16.0",

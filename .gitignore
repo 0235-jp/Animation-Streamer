@@ -3,6 +3,7 @@ dist/
 tmp/
 .env
 .DS_Store
+.fuse_hidden*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

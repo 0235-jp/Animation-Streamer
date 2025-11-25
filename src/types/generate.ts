@@ -1,8 +1,3 @@
-export interface GenerateDefaults {
-  emotion?: string
-  idleMotionId?: string
-}
-
 export interface GenerateRequestItem {
   action: string
   params?: Record<string, unknown>
@@ -11,9 +6,9 @@ export interface GenerateRequestItem {
 export interface GenerateRequestPayload {
   presetId: string
   stream?: boolean
-  defaults?: GenerateDefaults
+  /** ライブストリームパイプライン用（output/streamに出力、実パスを返す） */
+  forStreamPipeline?: boolean
   requests: GenerateRequestItem[]
-  metadata?: Record<string, unknown>
   debug?: boolean
 }
 

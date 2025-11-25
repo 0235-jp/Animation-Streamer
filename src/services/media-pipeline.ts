@@ -277,7 +277,7 @@ export class MediaPipeline {
     return filePath
   }
 
-  private async hasAudioStream(videoPath: string): Promise<boolean> {
+  async hasAudioStream(videoPath: string): Promise<boolean> {
     const output = await runCommandWithOutput('ffprobe', [
       '-v',
       'error',
@@ -290,6 +290,52 @@ export class MediaPipeline {
       videoPath,
     ])
     return output.trim().length > 0
+  }
+
+  /**
+   * 入力ファイルに音声トラックがなければ無音音声を追加したバージョンを作成する。
+   * 音声トラックがあればそのまま入力ファイルのパスを返す。
+   */
+  async ensureAudioTrack(videoPath: string, jobDir?: string): Promise<string> {
+    const hasAudio = await this.hasAudioStream(videoPath)
+    if (hasAudio) {
+      return videoPath
+    }
+    const dir = jobDir ?? (await this.createJobDir())
+    const outputPath = path.join(dir, `with-audio-${randomUUID()}.mp4`)
+    const durationMs = await this.getVideoDurationMs(videoPath)
+    const durationSec = Math.max(0.1, durationMs / 1000)
+
+    await runCommand('ffmpeg', [
+      '-y',
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-i',
+      videoPath,
+      '-f',
+      'lavfi',
+      '-t',
+      durationSec.toString(),
+      '-i',
+      `anullsrc=channel_layout=${AUDIO_CHANNEL_LAYOUT}:sample_rate=${AUDIO_SAMPLE_RATE}`,
+      '-map',
+      '0:v:0',
+      '-map',
+      '1:a:0',
+      '-c:v',
+      'copy',
+      '-c:a',
+      'aac',
+      '-ar',
+      AUDIO_SAMPLE_RATE.toString(),
+      '-ac',
+      AUDIO_CHANNEL_COUNT.toString(),
+      '-shortest',
+      outputPath,
+    ])
+
+    return outputPath
   }
 
   async normalizeAudio(inputPath: string, jobDir?: string, prefix = 'audio'): Promise<string> {

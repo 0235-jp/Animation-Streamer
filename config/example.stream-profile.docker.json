@@ -4,6 +4,9 @@
     "host": "0.0.0.0",
     "apiKey": "replace-with-your-key"
   },
+  "rtmp": {
+    "outputUrl": "rtmp://127.0.0.1:1936/live/main"
+  },
   "presets": [
     {
       "id": "anchor-a",

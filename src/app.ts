@@ -7,6 +7,9 @@ import { VoicevoxClient } from './services/voicevox'
 import { GenerationService } from './services/generation.service'
 import { createGenerationRouter } from './api/generation.controller'
 import { createDocsRouter } from './api/docs'
+import { StreamService } from './services/stream.service'
+import { createStreamRouter } from './api/stream.controller'
+import { RtmpServer } from './infra/rtmp-server'
 
 export interface CreateAppOptions {
   configPath?: string
@@ -28,7 +31,13 @@ export const createApp = async (options: CreateAppOptions = {}) => {
 
   const app = express()
   app.use(express.json({ limit: '2mb' }))
+
+  const rtmpServer = new RtmpServer({ outputUrl: config.rtmp.outputUrl })
+  rtmpServer.start()
+  const streamService = new StreamService(config, clipPlanner, mediaPipeline, generationService)
+
   app.use('/api', createGenerationRouter(generationService, { apiKey: config.server.apiKey }))
+  app.use('/api', createStreamRouter(streamService, { apiKey: config.server.apiKey }))
   app.use('/docs', createDocsRouter())
   app.get('/health', (_req, res) => res.json({ status: 'ok' }))
 
