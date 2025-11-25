@@ -134,9 +134,10 @@ animation-streamer/
 - 環境変数 `RESPONSE_PATH_BASE` を指定すると、`output/` からの相対パスをもとにホスト上のフルパスを組み立ててレスポンスへ埋め込む。コンテナ配下のパス（例: `/app/output/...`）をそのまま返してもホストから参照できないため、Compose では `RESPONSE_PATH_BASE=${PWD}/output` のように指定してパス解決を行う。未指定の場合はコンテナ内絶対パスを返す。
 
 ## 3. 状態管理
-- `interface StreamState { sessionId: string; phase: 'IDLE'|'WAITING'|'SPEECH'|'STOPPED'; activeMotionId?: string; queueLength: number; }
+- `interface StreamState { sessionId: string; presetId: string; phase: 'STOPPED'|'IDLE'|'SPEAK'; activeMotionId?: string; queueLength: number; }`
 - `StreamSession` クラスが以下を保持:
   - `phase`
+  - `presetId`
   - `idleLoopProcess: ChildProcess | null`
   - `speechProcess: ChildProcess | null`
   - `queue: SpeechTaskQueue`
@@ -145,22 +146,23 @@ animation-streamer/
 - `status` API 用に読み取り専用スナップショットを提供。
 - `GenerationService` はストリーム状態とは独立したジョブ（`generate` API呼び出し）を扱うため、`StreamSession` のロックとは切り離されている。現状は1リクエスト内のアクションを逐次処理し、API呼び出し単位で完結する（全体キュー／同時実行数制御は今後の拡張候補）。
 
-## 4. IdleLoopController（待機・発話共通プレイリスト）
-- 入力: `presetProfile`（`idleMotions` / `speechMotions` / `speechTransitions` を内包）、`outputUrl`, `ProcessManager`。
-- 実装戦略: ffmpegの`concat`デマルチプレクサを使い、待機モーションと発話モーションのプレイリストを標準入力から逐次供給する。ffmpegプロセスは常駐し、ループ・割込みとも同一ストリーム内で処理してフレームギャップを生まない。
-  1. `start()` で `ffmpeg -re -f concat -safe 0 -i pipe:0 -c copy -f flv <output>` を起動し、`stdin`へ最初の待機モーションエントリ（`file '<path>'`）を書き込む。
-  2. ffmpegは現在のモーション再生中に次エントリが届くとシームレスに続きの動画として扱う。`IdleLoopController`は動画終了見込み時間の少し前に次の待機モーションをランダム選択して`stdin`へ追記し、常に数件のバッファを確保する。
-  3. `SpeechTaskQueue` から「次は発話モーションを再生したい」というリクエストを受けると、待機モーションの追記を一時的に停止し、次エントリとして発話モーションを挿入する。そのモーションが再生されている間にも、終了後に続く待機モーションを先行予約する。
-  4. `stop()` はChildProcessへSIGTERM→timeout→SIGKILL。停止時は`stdin`を閉じて `concat` を自然終了させる。
-- キャラクター変更を伴う場合は `StreamService` から `switchPreset(newProfile)` を呼び、バッファ内の待機モーションが流れ終わったタイミングで新しい `presetProfile` に基づくプレイリストへ切り替える。これにより待機ストリームを止めずにキャラクター固有のモーションへ移行できる。
+## 4. IdleLoopController（待機・発話・任意アクションのプレイリスト）
+- 入力: `presetProfile`（`idleMotions` / `speechMotions` / `speechTransitions` / `actions` を内包）、`outputUrl`, `ProcessManager`。
+- 実装戦略: 「ffconcatファイルチェーン＋アトミック差し替え」で、`speak` と任意 `action` をタスク単位で割り込ませる設計にする。stdin追記は使わず、自己参照する `idle.txt` を基点にタスクffconcatを一度だけ読むよう書き換える。
+  1. `start()` では、指定された `presetId` の `idleMotions`（Large/Smallに複数登録可）を ffprobe で秒数計測し、ClipPlanner.selectIdleClips で `MIN_IDLE_SEC` 以上になるまで並べたプレイリストを作る。ヘッダーに `ffconcat version 1.0` を付け、選ばれた idle 行の後に `file 'idle.txt'` で自己参照させた「現在のプリセット用 idle.txt」を生成する（キャラ切替時はこのファイルを差し替える）。
+  2. ffmpeg は `-re -f concat -safe 0 -i idle.txt -c copy -f flv <output>` を `PLAYLIST_DIR` カレントで起動し、終了したら1秒後に自動再起動する。Node-Media-Server が RTMP/HTTP-FLV を提供する。
+  3. `speak` や任意 `action` を再生したいときは、ClipPlanner/MediaPipeline が決めたクリップ列をもとにタスク用ffconcat（例: `speak-<taskId>.txt` なら enter→speech→exit→`idle.txt` 戻り、`action-<taskId>.txt` なら該当動画→`idle.txt` 戻り）を生成する。
+  4. 生成したタスクffconcatを1回だけ読ませるため、`idle.txt` を一時ファイルに書き出してから `rename` で置換し、前後のidleも ClipPlanner で複数選んだうえで `file '<task ffconcat>'` と `file 'idle.txt'`（自己参照）を追加する。これによりタスク再生後は自動的に待機ループへ復帰する。
+  5. 差し替え後に ffmpeg stderr の "Opening '<task ffconcat>'" やタスク内クリップのオープンログを監視し、検知できたら自己参照版 `idle.txt` を復旧する。検知に失敗した場合でも、タスク総尺＋idle尺に基づくフォールバックタイマーで自動復旧する。
+  6. パス解決は `safe 0` 前提で絶対パス/`PLAYLIST_DIR` 相対どちらでも行える形にし、書き換えは常にアトミックリネームで行って再生中の破損を防ぐ。
+- キャラクター変更をサポートする場合は stop→start で明示的に行い、別 `presetId` の start を同一ストリームの切替としては扱わない（並行ストリームは別プロセス/セッションで立ち上げる想定）。
 - 待機モーションの末尾フレームと発話モーションの先頭フレームをデザイナー側で揃えておけば、プレイリスト挿入のみで「待機→発話→待機」が一切止まらず繋がる。
 
 ## 5. SpeechTaskQueue (将来実装)
 - 役割: `text` エンドポイントから`SpeechTask`を受信順で管理。
 - 2段階処理:
   - **prepare phase**: TTS実行や音声ファイル生成（並列OK、音声プロファイルに設定されたVOICEVOX URLを利用）。
-  - **playback phase**: 再生は FIFO 順に1件ずつ。`IdleLoopController.reserveNextClip(taskClipPath)` を呼び、待機モーションの次エントリとして発話モーションを差し込み、再生後に待機モーション追記を再開する。
-- 待機ループが`concat`入力を受け取っているため、`reserveNextClip` で待機プレイリストへの書き込みを調整し、現在再生中の待機モーション終了直後に発話モーションが始まるようスケジューリングする。発話モーション終了前に次の待機モーションを先行で書き込むことでフレーム欠落を避ける。
+  - **playback phase**: ffconcat チェーンへの差し込みで表現する。`IdleLoopController` 側でタスクffconcat（`speak` なら enter→speech→exit、任意 `action` ならその動画1本）を一時生成し、ClipPlannerで選んだ複数idle（Large/Smallプールから）を前後に挟んだ `idle.txt` へアトミック置換することでFIFO順に割り込みを実現する。現状の簡易実装は「一度だけ挿入」動作で、複数タスクのキュー管理はTODO。
 - 実装案: Node の `EventEmitter` と Promise チェーンで自前キュー、または `p-queue` 等の軽量ライブラリ。
 - 現段階では`enqueue`にTODOを入れ、APIからの呼び出しを受けるだけ。
 
@@ -191,21 +193,17 @@ animation-streamer/
     {
       "action": "bow"
     }
-  ],
-  "metadata": {
-    "sessionId": "abc123"
-  }
+  ]
 }
 ```
 - `stream`: `true` の場合は逐次レスポンス（chunked JSON / SSE）で生成完了ごとに結果をpush。`false`または未指定時は全アクション完了後にまとめて返す。
-- `defaults`: バッチ内の共通既定値（emotion や idleMotionId など）。アクション個別の `params` があればそちらを優先する。
 - `requests` は記述順に処理され、レスポンスの `id` はサーバー側で `1, 2, ...` と自動採番される（クライアント指定は不要）。
 - `requests[].action`: `speak` / `idle` / 設定ファイルで定義した `presets[*].actions[].id` のいずれか。`speak` と `idle` は予約語のため `actions` には登録不可。
 - `requests[].params`: アクション固有の入力。将来タグ経由で話速・ポーズを制御できるよう `tags: string[]` を受け付けておく。
 
 ### 6.2 アクション種別
 - **speak**
-  - 必須: `text`。`emotion` は任意（未指定時は `defaults.emotion` → `neutral`）。emotion指定があっても該当モーションが無い場合は `neutral` プールへフォールバックする。
+  - 必須: `text`。`emotion` は任意（未指定時は `neutral`）。emotion指定があっても該当モーションが無い場合は `neutral` プールへフォールバックする。
   - リクエスト直下の `presetId` で指定されたキャラクターの `speechMotions` と `audioProfile` を利用する。
   - VOICEVOX で音声合成 → `MediaPipeline.normalizeAudio` で 48kHz ステレオ化 → `MediaPipeline.trimAudioSilence` で前後の無音を除去し、実際の発話部分だけを残す。この「トリミング済み音声」の尺を計測して発話モーションを割り当てる。対象キャラクターで `speechTransitions.enter/exit` が定義されている場合は、トリミング済み音声の前後にサイレントパディングを付与して `idle→talk` / `talk→idle` のブリッジ動画と同期させる。
   - `speechMotions` を emotion + type(Large/Small)でグループ化し、`animation-streamer-example` の `buildTimelinePlan` と同様に Largeで埋めて余りをSmallで補完。emotionに一致するモーションが無ければ `neutral` → その他任意順でフォールバック。
@@ -260,26 +258,21 @@ animation-streamer/
 - ffmpeg呼び出しは `fluent-ffmpeg` か `child_process.spawn` のどちらでもよいが、`-f concat -safe 0 -i <list>` + `-i <audio>` + `-c:v copy -c:a aac -shortest` を基本形とする。
 
 ## 8. API 仕様 (初期)
-### POST /api/start
-- Body: `{ "sessionToken": "optional" }` (後日認証導入予定)。
-- 成功 200: `{ "status": "WAITING", "sessionId": "...", "currentMotionId": "idle-wave" }`
-- 既に待機中なら同レスポンス。
+### POST /api/stream/start
+- Body: `{ "presetId": "required", "debug": false }`
+  - `presetId`: 使用キャラクター必須。将来認証を導入する場合はヘッダー/ボディで受け付ける。
+  - `debug`: `true` の場合、`output/stream` 内の生成ファイルを自動削除しない（デバッグ用）。デフォルト `false`。
+- 成功 200: `{ "status": "IDLE", "sessionId": "...", "currentMotionId": "idle-wave", "presetId": "..." }`
+- 既に待機中に同一 `presetId` で呼ばれた場合は同レスポンスで冪等。それ以外（別 `presetId`）はこのストリームでは 409（別セッションを立ち上げる場合はプロセスを分ける）。
+- `debug=false` の場合、start時に `output/stream` をクリアし、stop時および再生完了後に不要なファイルを自動削除する。
 
-### POST /api/stop
+### POST /api/stream/stop
 - Body: `{}`
 - 成功 200: `{ "status": "STOPPED" }`
 - 実行中タスクがあればキャンセル。
 
-### POST /api/text (TODO)
-- Body案:
-```json
-{
-  "text": "こんにちは",
-  "motionId": "talk-default",
-  "metadata": {}
-}
-```
-- 現段階は `501 Not Implemented` を返し、内部キュー処理はまだ行わない。
+### POST /api/stream/text
+- ボディは `/api/generate` と同じアクション列フォーマット（`presetId` / `requests[]`）。違いは「生成物をファイルに書き出さず、ストリームに順次割り込ませて再生する」点。
 
 ### POST /api/generate
 - Body（例）: セクション6.1参照。
@@ -292,7 +285,7 @@ animation-streamer/
 - 再生ストリームとは独立して呼び出せるため、`start/stop` 状態に依存しない。
 
 ### GET /api/status
-- 例: `{ "status": "WAITING", "currentMotionId": "idle-think", "queueLength": 0, "uptimeMs": 12345 }
+- 例: `{ "status": "IDLE", "currentMotionId": "idle-think", "queueLength": 0, "uptimeMs": 12345 }
 
 ## 9. エラーハンドリング・クリーンアップ
 - ffmpegプロセスは `exit` コードを監視し、異常終了時はログ出力後に次モーションで再試行。

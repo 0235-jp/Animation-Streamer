@@ -5,8 +5,10 @@ import { ResolvedAction, ResolvedPreset, ResolvedConfig, type VoicevoxVoiceProfi
 import { ClipPlanner } from './clip-planner'
 import { MediaPipeline, type ClipSource, NoAudioTrackError } from './media-pipeline'
 import { VoicevoxClient, type VoicevoxVoiceOptions } from './voicevox'
-import type { ActionResult, GenerateDefaults, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler } from '../types/generate'
+import type { ActionResult, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler } from '../types/generate'
 import { logger } from '../utils/logger'
+
+const DEFAULT_EMOTION = 'neutral'
 
 class ActionProcessingError extends Error {
   constructor(
@@ -67,10 +69,6 @@ export class GenerationService {
     payload: GenerateRequestPayload,
     handler?: StreamPushHandler
   ): Promise<StreamBatchResult | CombinedBatchResult> {
-    const defaults: GenerateDefaults = {
-      emotion: payload.defaults?.emotion ?? 'neutral',
-      idleMotionId: payload.defaults?.idleMotionId,
-    }
     const preset = this.resolvePresetById(this.ensureString(payload.presetId, 'presetId', '0'))
     const includeDebug = Boolean(payload.debug)
     const indexedRequests: IndexedRequest[] = payload.requests.map((item, index) => ({
@@ -78,25 +76,26 @@ export class GenerationService {
       requestId: String(index + 1),
     }))
 
+    const forStreamPipeline = payload.forStreamPipeline ?? false
     if (payload.stream) {
-      const results = await this.processStreamingBatch(indexedRequests, preset, defaults, includeDebug, handler)
+      const results = await this.processStreamingBatch(indexedRequests, preset, includeDebug, forStreamPipeline, handler)
       return { kind: 'stream', results }
     }
-    const combined = await this.processCombinedBatch(indexedRequests, preset, defaults, includeDebug)
+    const combined = await this.processCombinedBatch(indexedRequests, preset, includeDebug)
     return { kind: 'combined', result: combined }
   }
 
   private async processStreamingBatch(
     indexedRequests: IndexedRequest[],
     preset: ResolvedPreset,
-    defaults: GenerateDefaults,
     includeDebug: boolean,
+    forStreamPipeline: boolean,
     handler?: StreamPushHandler
   ): Promise<ActionResult[]> {
     const results: ActionResult[] = []
     for (const { item, requestId } of indexedRequests) {
       try {
-        const result = await this.processSingle(preset, item, defaults, requestId, includeDebug)
+        const result = await this.processSingle(preset, item, requestId, includeDebug, forStreamPipeline)
         if (handler?.onResult) {
           await handler.onResult(result)
         }
@@ -118,7 +117,6 @@ export class GenerationService {
   private async processCombinedBatch(
     indexedRequests: IndexedRequest[],
     preset: ResolvedPreset,
-    defaults: GenerateDefaults,
     includeDebug: boolean
   ): Promise<CombinedResult> {
     const plannedActions: PlannedAction[] = []
@@ -126,7 +124,7 @@ export class GenerationService {
     try {
       for (const { item, requestId } of indexedRequests) {
         try {
-          const planned = await this.planAction(preset, item, defaults, jobDir, requestId)
+          const planned = await this.planAction(preset, item, jobDir, requestId)
           plannedActions.push(planned)
         } catch (error) {
           if (error instanceof ActionProcessingError) throw error
@@ -163,34 +161,33 @@ export class GenerationService {
   private async processSingle(
     preset: ResolvedPreset,
     item: GenerateRequestItem,
-    defaults: GenerateDefaults,
     requestId: string,
-    includeDebug: boolean
+    includeDebug: boolean,
+    forStream = false
   ): Promise<ActionResult> {
     const actionName = item.action.toLowerCase()
     switch (actionName) {
       case 'speak':
-        return this.handleSpeak(preset, item, defaults, requestId, includeDebug)
+        return this.handleSpeak(preset, item, requestId, includeDebug, forStream)
       case 'idle':
-        return this.handleIdle(preset, item, defaults, requestId, includeDebug)
+        return this.handleIdle(preset, item, requestId, includeDebug, forStream)
       default:
-        return this.handleCustomAction(preset, item, requestId, includeDebug)
+        return this.handleCustomAction(preset, item, requestId, includeDebug, forStream)
     }
   }
 
   private async planAction(
     preset: ResolvedPreset,
     item: GenerateRequestItem,
-    defaults: GenerateDefaults,
     jobDir: string,
     requestId: string
   ): Promise<PlannedAction> {
     const actionName = item.action.toLowerCase()
     switch (actionName) {
       case 'speak':
-        return this.planSpeakAction(preset, item, defaults, jobDir, requestId)
+        return this.planSpeakAction(preset, item, jobDir, requestId)
       case 'idle':
-        return this.planIdleAction(preset, item, defaults, jobDir, requestId)
+        return this.planIdleAction(preset, item, jobDir, requestId)
       default:
         return this.planCustomAction(preset, item, jobDir, requestId)
     }
@@ -199,13 +196,13 @@ export class GenerationService {
   private async handleSpeak(
     preset: ResolvedPreset,
     item: GenerateRequestItem,
-    defaults: GenerateDefaults,
     requestId: string,
-    includeDebug: boolean
+    includeDebug: boolean,
+    forStream = false
   ): Promise<ActionResult> {
     const jobDir = await this.mediaPipeline.createJobDir()
     try {
-      const plan = await this.buildSpeakPlan(preset, item, defaults, jobDir, requestId)
+      const plan = await this.buildSpeakPlan(preset, item, jobDir, requestId)
       const { outputPath, durationMs } = await this.mediaPipeline.compose({
         clips: plan.clips,
         audioPath: plan.audioPath,
@@ -213,7 +210,7 @@ export class GenerationService {
         jobDir,
       })
 
-      const finalPath = await this.moveToTemp(outputPath, `speak-${requestId}`)
+      const finalPath = await this.moveToTemp(outputPath, `speak-${requestId}`, forStream)
       const result: ActionResult = {
         id: requestId,
         action: item.action,
@@ -232,19 +229,19 @@ export class GenerationService {
   private async handleIdle(
     preset: ResolvedPreset,
     item: GenerateRequestItem,
-    defaults: GenerateDefaults,
     requestId: string,
-    includeDebug: boolean
+    includeDebug: boolean,
+    forStream = false
   ): Promise<ActionResult> {
     const jobDir = await this.mediaPipeline.createJobDir()
     try {
-      const plan = await this.buildIdlePlanData(preset, item, defaults, requestId)
+      const plan = await this.buildIdlePlanData(preset, item, requestId)
       const { outputPath, durationMs: actualDuration } = await this.mediaPipeline.compose({
         clips: plan.clips,
         durationMs: plan.requestedDurationMs,
         jobDir,
       })
-      const finalPath = await this.moveToTemp(outputPath, `idle-${requestId}`)
+      const finalPath = await this.moveToTemp(outputPath, `idle-${requestId}`, forStream)
       const result: ActionResult = {
         id: requestId,
         action: item.action,
@@ -264,7 +261,8 @@ export class GenerationService {
     preset: ResolvedPreset,
     item: GenerateRequestItem,
     requestId: string,
-    includeDebug: boolean
+    includeDebug: boolean,
+    forStream = false
   ): Promise<ActionResult> {
     const jobDir = await this.mediaPipeline.createJobDir()
     try {
@@ -275,7 +273,7 @@ export class GenerationService {
         durationMs: plan.durationMs,
         jobDir,
       })
-      const finalPath = await this.moveToTemp(outputPath, `action-${requestId}`)
+      const finalPath = await this.moveToTemp(outputPath, `action-${requestId}`, forStream)
       const result: ActionResult = {
         id: requestId,
         action: item.action,
@@ -313,9 +311,14 @@ export class GenerationService {
     throw new ActionProcessingError(`${field} は正の数値で指定してください`, requestId)
   }
 
-  private async moveToTemp(sourcePath: string, prefix: string): Promise<string> {
+  private async moveToTemp(sourcePath: string, prefix: string, forStream = false): Promise<string> {
     const fileName = `${prefix}-${randomUUID()}.mp4`
-    const destination = path.join(this.config.paths.outputDir, fileName)
+    // ストリームモードではoutput/streamに出力（FFmpegのworkDirと同じ場所）
+    const outputDir = forStream
+      ? path.join(this.config.paths.outputDir, 'stream')
+      : this.config.paths.outputDir
+    await fs.mkdir(outputDir, { recursive: true })
+    const destination = path.join(outputDir, fileName)
     try {
       await fs.rename(sourcePath, destination)
     } catch (error) {
@@ -327,7 +330,9 @@ export class GenerationService {
         throw error
       }
     }
-    const responsePath = this.toResponsePath(destination)
+    // ストリームモードでは実際のファイルパスを返す（FFmpegが参照するため）
+    // APIレスポンス用には変換されたパスを返す
+    const responsePath = forStream ? destination : this.toResponsePath(destination)
     logger.info({ destination, responsePath }, 'Generated clip')
     return responsePath
   }
@@ -335,23 +340,21 @@ export class GenerationService {
   private async planSpeakAction(
     preset: ResolvedPreset,
     item: GenerateRequestItem,
-    defaults: GenerateDefaults,
     jobDir: string,
     requestId: string
   ): Promise<PlannedAction> {
-    return this.buildSpeakPlan(preset, item, defaults, jobDir, requestId)
+    return this.buildSpeakPlan(preset, item, jobDir, requestId)
   }
 
   private async buildSpeakPlan(
     preset: ResolvedPreset,
     item: GenerateRequestItem,
-    defaults: GenerateDefaults,
     jobDir: string,
     requestId: string
   ): Promise<PlannedAction> {
     const params = item.params ?? {}
     const text = this.ensureString(params.text, 'text', requestId)
-    const emotion = this.ensureOptionalString(params.emotion) ?? defaults.emotion ?? 'neutral'
+    const emotion = this.ensureOptionalString(params.emotion) ?? DEFAULT_EMOTION
 
     const audioPath = path.join(jobDir, `voice-${requestId}.wav`)
     const { voice, endpoint } = this.resolveVoiceProfile(preset, emotion)
@@ -407,11 +410,10 @@ export class GenerationService {
   private async planIdleAction(
     preset: ResolvedPreset,
     item: GenerateRequestItem,
-    defaults: GenerateDefaults,
     jobDir: string,
     requestId: string
   ): Promise<PlannedAction> {
-    const plan = await this.buildIdlePlanData(preset, item, defaults, requestId)
+    const plan = await this.buildIdlePlanData(preset, item, requestId)
     const audioPath = await this.mediaPipeline.createSilentAudio(plan.durationMs, jobDir)
     return {
       id: plan.id,
@@ -485,12 +487,11 @@ export class GenerationService {
   private async buildIdlePlanData(
     preset: ResolvedPreset,
     item: GenerateRequestItem,
-    defaults: GenerateDefaults,
     requestId: string
   ): Promise<IdlePlanData> {
     const params = item.params ?? {}
     const durationMs = this.ensurePositiveNumber(params.durationMs, 'durationMs', requestId)
-    const motionId = this.ensureOptionalString(params.motionId) ?? defaults.idleMotionId
+    const motionId = this.ensureOptionalString(params.motionId)
     const emotion = this.ensureOptionalString(params.emotion)
     const plan = await this.clipPlanner.buildIdlePlan(preset.id, durationMs, motionId, emotion)
     return {

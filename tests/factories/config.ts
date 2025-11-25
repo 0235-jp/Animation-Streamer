@@ -131,6 +131,7 @@ const cloneConfig = (): ResolvedConfig => {
   const presets = [createPreset()]
   return {
     server: { port: 4000 },
+    rtmp: { outputUrl: 'rtmp://127.0.0.1:1936/live/main' },
     presets,
     presetMap: new Map(presets.map((preset) => [preset.id, preset])),
     paths: {

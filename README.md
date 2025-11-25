@@ -73,15 +73,50 @@ curl -X POST http://localhost:4000/api/generate \
   }'
 ```
 
-`stream=false` の場合は `combined.outputPath` に 1 本にまとめたMP4パスが返却されます。 `stream=true` を指定すると各アクション完了ごとに NDJSON でレスポンスがストリーミングされます。  
-`presetId` はリクエスト直下で **必須** 指定です（すべてのアクションが同一プリセットを参照します）。  
+`stream=false` の場合は `combined.outputPath` に 1 本にまとめたMP4パスが返却されます。 `stream=true` を指定すると各アクション完了ごとに NDJSON でレスポンスがストリーミングされます。
+`presetId` はリクエスト直下で **必須** 指定です（すべてのアクションが同一プリセットを参照します）。
 `server.apiKey` を設定した場合は `-H 'X-API-Key: <your-key>'` を付与してください。
+
+## ストリーミング配信 API
+
+RTMP/HTTP-FLV でリアルタイム配信を行う場合は `/api/stream/*` エンドポイントを使用します。
+
+### 配信の開始
+```bash
+curl -X POST http://localhost:4000/api/stream/start \
+  -H 'Content-Type: application/json' \
+  -d '{ "presetId": "anchor-a" }'
+```
+
+`debug: true` を指定すると `output/stream` 内のファイルを自動削除しません（デバッグ用）。
+
+### テキスト割り込み
+配信中に発話を挿入するには `/api/stream/text` を使用します。フォーマットは `/api/generate` と同じです。
+```bash
+curl -X POST http://localhost:4000/api/stream/text \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "presetId": "anchor-a",
+    "requests": [
+      { "action": "speak", "params": { "text": "こんにちは" } }
+    ]
+  }'
+```
+
+### 配信の停止
+```bash
+curl -X POST http://localhost:4000/api/stream/stop
+```
+
+### OBS での視聴
+OBS のメディアソースに `rtmp://localhost:1935/live/main` を指定してください。`config/stream-profile.json` の `rtmp.outputUrl` でポートやストリームキーを変更できます。
 
 
 ## 設定
 `config/stream-profile.json` でモーション動画や VOICEVOX エンドポイントなどを定義します。主な項目は以下の通りです。
 
 - server.port / server.host / server.apiKey: API の待受ポート・ホスト・APIキー。
+- rtmp.outputUrl: RTMP 出力先 URL（デフォルト: `rtmp://127.0.0.1:1935/live/main`）。内蔵の node-media-server がこの URL でストリームを受信し、OBS 等から参照可能にします。
 - presets: キャラクターのプリセット定義配列。最低1件登録し、APIからは `presetId` で参照します。
   - id / displayName: プリセット識別子と任意の表示名。
   - actions: プリセット固有のカスタムアクション群（`speak`/`idle` は予約語のため不可）。`id` は `requests[].action` に指定し、`path` は `motions/` からの相対パス（例: `talk_idle.mp4` や `dir_name/talk_idle.mp4`）です。

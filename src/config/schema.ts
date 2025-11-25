@@ -69,6 +69,11 @@ export const configSchema = z.object({
       apiKey: z.string().min(1).optional(),
     })
     .default({ port: 4000, host: 'localhost' }),
+  rtmp: z
+    .object({
+      outputUrl: z.string().min(1).default('rtmp://127.0.0.1:1936/live/main'),
+    })
+    .default({ outputUrl: 'rtmp://127.0.0.1:1936/live/main' }),
   presets: z.array(presetSchema).min(1),
 })
 

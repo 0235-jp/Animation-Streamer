@@ -15,6 +15,7 @@ vi.mock('node:crypto', () => ({
 }))
 
 const mockFs = () => {
+  vi.spyOn(fs, 'mkdir').mockResolvedValue(undefined)
   vi.spyOn(fs, 'rename').mockResolvedValue()
   vi.spyOn(fs, 'copyFile').mockResolvedValue()
   vi.spyOn(fs, 'rm').mockResolvedValue()
@@ -348,28 +349,26 @@ describe('GenerationService', () => {
     })
   })
 
-  it('applies defaults for idle motion id when params omit overrides', async () => {
+  it('uses undefined motionId when params omit motionId', async () => {
     const { service, clipPlanner } = createService()
     const payload = withPreset({
-      defaults: { idleMotionId: 'idle-large' },
       requests: [{ action: 'idle', params: { durationMs: 700 } }],
     })
 
     await service.processBatch(payload)
 
-    expect(clipPlanner.buildIdlePlan).toHaveBeenCalledWith(DEFAULT_PRESET_ID, expect.any(Number), 'idle-large', undefined)
+    expect(clipPlanner.buildIdlePlan).toHaveBeenCalledWith(DEFAULT_PRESET_ID, expect.any(Number), undefined, undefined)
   })
 
-  it('uses defaults emotion for speak actions when params omit emotion', async () => {
+  it('uses neutral emotion for speak actions when params omit emotion', async () => {
     const { service, clipPlanner } = createService()
     const payload = withPreset({
-      defaults: { emotion: 'happy' },
       requests: [{ action: 'speak', params: { text: 'default emotion' } }],
     })
 
     await service.processBatch(payload)
 
-    expect(clipPlanner.buildSpeechPlan).toHaveBeenCalledWith(DEFAULT_PRESET_ID, 'happy', expect.any(Number))
+    expect(clipPlanner.buildSpeechPlan).toHaveBeenCalledWith(DEFAULT_PRESET_ID, 'neutral', expect.any(Number))
   })
 
   it('assigns sequential string ids to streaming results', async () => {
@@ -392,6 +391,80 @@ describe('GenerationService', () => {
     const { service } = createService()
     const preset = (service as any).config.presets[0]
     await expect((service as any).buildCustomActionPlanData(preset, { action: 'speak' }, '1')).rejects.toThrow('予約語')
+  })
+
+  describe('forStreamPipeline', () => {
+    it('outputs to output/stream and returns actual path when forStreamPipeline is true', async () => {
+      const customConfig = createResolvedConfig({
+        paths: {
+          projectRoot: '/app',
+          motionsDir: '/app/motions',
+          outputDir: '/app/output',
+          responsePathBase: '/host/output',
+        },
+      })
+      customConfig.presetMap.set(customConfig.presets[0].id, customConfig.presets[0])
+      const { service } = createService(customConfig)
+      const payload = withPreset({
+        stream: true,
+        forStreamPipeline: true,
+        requests: [{ action: 'idle', params: { durationMs: 400 } }],
+      })
+
+      const result = (await service.processBatch(payload)) as { kind: 'stream'; results: ActionResult[] }
+
+      expect(result.kind).toBe('stream')
+      // forStreamPipeline=trueの場合、output/streamに出力し、実パスを返す
+      expect(result.results[0].outputPath).toBe(path.join('/app/output/stream', 'idle-1-test-uuid.mp4'))
+    })
+
+    it('outputs to output and returns response path when forStreamPipeline is false', async () => {
+      const customConfig = createResolvedConfig({
+        paths: {
+          projectRoot: '/app',
+          motionsDir: '/app/motions',
+          outputDir: '/app/output',
+          responsePathBase: '/host/output',
+        },
+      })
+      customConfig.presetMap.set(customConfig.presets[0].id, customConfig.presets[0])
+      const { service } = createService(customConfig)
+      const payload = withPreset({
+        stream: true,
+        forStreamPipeline: false,
+        requests: [{ action: 'idle', params: { durationMs: 400 } }],
+      })
+
+      const result = (await service.processBatch(payload)) as { kind: 'stream'; results: ActionResult[] }
+
+      expect(result.kind).toBe('stream')
+      // forStreamPipeline=falseの場合、outputに出力し、responsePathBaseで変換されたパスを返す
+      expect(result.results[0].outputPath).toBe(path.join('/host/output', 'idle-1-test-uuid.mp4'))
+    })
+
+    it('defaults forStreamPipeline to false when not specified', async () => {
+      const customConfig = createResolvedConfig({
+        paths: {
+          projectRoot: '/app',
+          motionsDir: '/app/motions',
+          outputDir: '/app/output',
+          responsePathBase: '/host/output',
+        },
+      })
+      customConfig.presetMap.set(customConfig.presets[0].id, customConfig.presets[0])
+      const { service } = createService(customConfig)
+      const payload = withPreset({
+        stream: true,
+        // forStreamPipelineは未指定
+        requests: [{ action: 'idle', params: { durationMs: 400 } }],
+      })
+
+      const result = (await service.processBatch(payload)) as { kind: 'stream'; results: ActionResult[] }
+
+      expect(result.kind).toBe('stream')
+      // デフォルトはfalseなのでresponsePathBaseで変換されたパスを返す
+      expect(result.results[0].outputPath).toBe(path.join('/host/output', 'idle-1-test-uuid.mp4'))
+    })
   })
 
   it('builds combined timeline preserving clip order and total duration', async () => {
