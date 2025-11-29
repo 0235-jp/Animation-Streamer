@@ -7,7 +7,9 @@ import type {
   ResolvedIdleMotion,
   ResolvedSpeechMotion,
   ResolvedSpeechTransitions,
+  VoicevoxVoiceProfile,
 } from '../../src/config/loader'
+import type { VoicevoxAudioProfile } from '../../src/services/tts/schema'
 
 const projectRoot = process.cwd()
 const motionDir = path.resolve(projectRoot, 'motions')
@@ -72,19 +74,16 @@ const baseTransitions: ResolvedSpeechTransitions = {
   ],
 }
 
-const baseAudioProfile: ResolvedAudioProfile = {
+const baseEngineConfig: VoicevoxAudioProfile = {
   ttsEngine: 'voicevox',
-  voicevoxUrl: 'http://127.0.0.1:50021',
-  defaultVoice: {
-    emotion: 'neutral',
-    speakerId: 1,
-    speedScale: 1,
-    pitchScale: 0,
-    intonationScale: 1,
-    volumeScale: 1,
-    outputSamplingRate: 24000,
-    outputStereo: false,
-  },
+  url: 'http://127.0.0.1:50021',
+  speakerId: 1,
+  speedScale: 1,
+  pitchScale: 0,
+  intonationScale: 1,
+  volumeScale: 1,
+  outputSamplingRate: 24000,
+  outputStereo: false,
   voices: [
     {
       emotion: 'neutral',
@@ -97,6 +96,37 @@ const baseAudioProfile: ResolvedAudioProfile = {
       pitchScale: 0.2,
     },
   ],
+}
+
+const baseDefaultVoice: VoicevoxVoiceProfile = {
+  emotion: 'neutral',
+  speakerId: 1,
+  speedScale: 1,
+  pitchScale: 0,
+  intonationScale: 1,
+  volumeScale: 1,
+  outputSamplingRate: 24000,
+  outputStereo: false,
+}
+
+const baseVoices: VoicevoxVoiceProfile[] = [
+  {
+    emotion: 'neutral',
+    speakerId: 1,
+    speedScale: 1.05,
+  },
+  {
+    emotion: 'happy',
+    speakerId: 2,
+    pitchScale: 0.2,
+  },
+]
+
+const baseAudioProfile: ResolvedAudioProfile = {
+  ttsEngine: 'voicevox',
+  engineConfig: baseEngineConfig,
+  defaultVoice: baseDefaultVoice,
+  voices: baseVoices,
 }
 
 const createPreset = (): ResolvedPreset => {
@@ -121,6 +151,7 @@ const createPreset = (): ResolvedPreset => {
     },
     audioProfile: {
       ...baseAudioProfile,
+      engineConfig: { ...baseAudioProfile.engineConfig },
       defaultVoice: { ...baseAudioProfile.defaultVoice },
       voices: baseAudioProfile.voices.map((voice) => ({ ...voice })),
     },

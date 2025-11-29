@@ -3,7 +3,6 @@ import path from 'node:path'
 import { loadConfig, type ResolvedConfig } from './config/loader'
 import { MediaPipeline } from './services/media-pipeline'
 import { ClipPlanner } from './services/clip-planner'
-import { VoicevoxClient } from './services/voicevox'
 import { GenerationService } from './services/generation.service'
 import { createGenerationRouter } from './api/generation.controller'
 import { createDocsRouter } from './api/docs'
@@ -21,12 +20,10 @@ export const createApp = async (options: CreateAppOptions = {}) => {
 
   const mediaPipeline = new MediaPipeline(config.paths.outputDir)
   const clipPlanner = new ClipPlanner(mediaPipeline, config.presets)
-  const voicevox = new VoicevoxClient()
   const generationService = new GenerationService({
     config,
     clipPlanner,
     mediaPipeline,
-    voicevox,
   })
 
   const app = express()

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { audioProfileSchema } from '../services/tts/schema'
 
 export const motionTypeSchema = z.enum(['large', 'small'])
 
@@ -25,26 +26,9 @@ export const transitionMotionSchema = z.object({
 })
 const transitionCollectionSchema = z.union([transitionMotionSchema, z.array(transitionMotionSchema).min(1)])
 
-const synthesisParamsSchema = z.object({
-  speedScale: z.number().positive().optional(),
-  pitchScale: z.number().optional(),
-  intonationScale: z.number().nonnegative().optional(),
-  volumeScale: z.number().nonnegative().optional(),
-  outputSamplingRate: z.number().int().positive().optional(),
-  outputStereo: z.boolean().optional(),
-})
-
-const voicevoxVoiceSchema = synthesisParamsSchema.extend({
-  emotion: z.string().min(1).default('neutral'),
-  speakerId: z.number().int().nonnegative(),
-})
-
-export const audioProfileSchema = synthesisParamsSchema.extend({
-  ttsEngine: z.literal('voicevox'),
-  voicevoxUrl: z.string().min(1),
-  speakerId: z.number().int().nonnegative().default(1),
-  voices: z.array(voicevoxVoiceSchema).optional(),
-})
+// audioProfileSchemaは ../services/tts/schema からインポート
+// 複数のTTSエンジン（VOICEVOX, COEIROINK, AivisSpeech, OpenAI, Google, Azure, ElevenLabs等）に対応
+export { audioProfileSchema }
 
 const presetSchema = z.object({
   id: z.string().min(1),
