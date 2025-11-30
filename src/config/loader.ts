@@ -67,8 +67,31 @@ export interface OpenAiVoiceProfile extends BaseVoiceProfile {
 /** Style-Bert-VITS2用の音声プロファイル */
 export interface StyleBertVits2VoiceProfile extends BaseVoiceProfile {
   modelName: string
+  language?: string
   style?: string
   styleWeight?: number
+}
+
+/** Google Cloud TTS用の音声プロファイル */
+export interface GoogleTtsVoiceProfile extends BaseVoiceProfile {
+  languageCode: string
+  voiceName: string
+}
+
+/** Azure TTS用の音声プロファイル */
+export interface AzureTtsVoiceProfile extends BaseVoiceProfile {
+  voiceName: string
+  languageCode?: string
+  style?: string
+  styleDegree?: number
+}
+
+/** ElevenLabs用の音声プロファイル */
+export interface ElevenLabsVoiceProfile extends BaseVoiceProfile {
+  voiceId: string
+  modelId?: string
+  stability?: number
+  similarityBoost?: number
 }
 
 /** 解決済みの音声プロファイル（各エンジン共通） */
@@ -76,6 +99,9 @@ export type ResolvedVoiceProfile =
   | VoicevoxVoiceProfile
   | OpenAiVoiceProfile
   | StyleBertVits2VoiceProfile
+  | GoogleTtsVoiceProfile
+  | AzureTtsVoiceProfile
+  | ElevenLabsVoiceProfile
   | BaseVoiceProfile
 
 /** 解決済みのオーディオプロファイル */
@@ -281,6 +307,7 @@ const resolveAudioProfile = (
       const defaultVoice: StyleBertVits2VoiceProfile = {
         emotion: 'neutral',
         modelName: profile.modelName,
+        language: profile.language,
         style: profile.style,
         styleWeight: profile.styleWeight,
         speedScale: profile.speedScale,
@@ -292,17 +319,49 @@ const resolveAudioProfile = (
       return { ttsEngine, engineConfig: profile, defaultVoice, voices }
     }
 
-    case 'google':
-    case 'azure':
-    case 'elevenlabs': {
-      // これらのエンジンは基本的な音声プロファイルを使用
-      const defaultVoice: BaseVoiceProfile = {
+    case 'google': {
+      const defaultVoice: GoogleTtsVoiceProfile = {
         emotion: 'neutral',
+        languageCode: profile.languageCode,
+        voiceName: profile.voiceName,
         speedScale: profile.speedScale,
         pitchScale: profile.pitchScale,
         volumeScale: profile.volumeScale,
       }
-      const voices: BaseVoiceProfile[] = (profile.voices ?? []).map((v) => ({
+      const voices: GoogleTtsVoiceProfile[] = (profile.voices ?? []).map((v) => ({
+        ...v,
+        emotion: normalizeEmotion(v.emotion),
+      }))
+      return { ttsEngine, engineConfig: profile, defaultVoice, voices }
+    }
+
+    case 'azure': {
+      const defaultVoice: AzureTtsVoiceProfile = {
+        emotion: 'neutral',
+        voiceName: profile.voiceName,
+        languageCode: profile.languageCode,
+        speedScale: profile.speedScale,
+        pitchScale: profile.pitchScale,
+        volumeScale: profile.volumeScale,
+      }
+      const voices: AzureTtsVoiceProfile[] = (profile.voices ?? []).map((v) => ({
+        ...v,
+        emotion: normalizeEmotion(v.emotion),
+      }))
+      return { ttsEngine, engineConfig: profile, defaultVoice, voices }
+    }
+
+    case 'elevenlabs': {
+      const defaultVoice: ElevenLabsVoiceProfile = {
+        emotion: 'neutral',
+        voiceId: profile.voiceId,
+        modelId: profile.modelId,
+        stability: profile.stability,
+        similarityBoost: profile.similarityBoost,
+        speedScale: profile.speedScale,
+        volumeScale: profile.volumeScale,
+      }
+      const voices: ElevenLabsVoiceProfile[] = (profile.voices ?? []).map((v) => ({
         ...v,
         emotion: normalizeEmotion(v.emotion),
       }))

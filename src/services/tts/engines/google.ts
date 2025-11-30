@@ -6,8 +6,8 @@ import { logger } from '../../../utils/logger'
 const GOOGLE_TTS_ENDPOINT = 'https://texttospeech.googleapis.com/v1/text:synthesize'
 
 export interface GoogleTtsConfig {
-  /** Google Cloud APIキー（必須） */
-  apiKey: string
+  /** Google Cloud APIキー（apiKeyまたはcredentialsPathのいずれか必須） */
+  apiKey?: string
   /** 言語コード（必須）: ja-JP, en-US等 */
   languageCode: string
   /** 音声名（必須）: ja-JP-Wavenet-A等 */
@@ -21,7 +21,7 @@ export interface GoogleTtsConfig {
  */
 export class GoogleTtsEngine implements TtsEngine {
   readonly engineType = 'google' as const
-  private readonly apiKey: string
+  private readonly apiKey?: string
   private readonly languageCode: string
   private readonly voiceName: string
 
@@ -56,7 +56,9 @@ export class GoogleTtsEngine implements TtsEngine {
       audioConfig.pitch = voice.pitchScale
     }
     if (voice.volumeScale !== undefined) {
-      audioConfig.volumeGainDb = (voice.volumeScale - 1.0) * 6.0 // 1.0 = 0dB
+      // volumeGainDbは-96.0〜16.0の範囲でクランプ
+      const rawDb = (voice.volumeScale - 1.0) * 6.0 // 1.0 = 0dB
+      audioConfig.volumeGainDb = Math.max(-96, Math.min(16, rawDb))
     }
 
     const requestBody = {
@@ -72,10 +74,16 @@ export class GoogleTtsEngine implements TtsEngine {
 
     logger.debug({ endpoint, languageCode: requestBody.voice.languageCode, voiceName: requestBody.voice.name }, 'Google TTS request')
 
-    const response = await fetch(`${endpoint}?key=${this.apiKey}`, {
+    if (!this.apiKey) {
+      logger.error('Google TTS: APIキーが設定されていません')
+      throw new Error('Google TTS: APIキーが設定されていません')
+    }
+
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-goog-api-key': this.apiKey,
       },
       body: JSON.stringify(requestBody),
     })
@@ -86,7 +94,13 @@ export class GoogleTtsEngine implements TtsEngine {
       throw new Error(`Google Cloud TTS に失敗しました (${response.status}): ${message}`)
     }
 
-    const result = (await response.json()) as { audioContent: string }
+    const result = (await response.json()) as { audioContent?: string }
+
+    // audioContentの検証
+    if (!result.audioContent) {
+      logger.error({ result }, 'Google TTS: audioContentが空です')
+      throw new Error('Google TTS: audioContentが空です')
+    }
 
     // Base64デコードしてファイルに書き込み
     const buffer = Buffer.from(result.audioContent, 'base64')

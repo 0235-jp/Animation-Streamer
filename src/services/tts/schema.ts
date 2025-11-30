@@ -57,6 +57,7 @@ export const voicevoxAudioProfileSchema = voicevoxAudioProfileBaseSchema.transfo
 const styleBertVits2VoiceSchema = synthesisParamsSchema.extend({
   emotion: z.string().min(1).default('neutral'),
   modelName: z.string().min(1),
+  language: z.string().min(1).optional(),
   style: z.string().optional(),
   styleWeight: z.number().min(0).max(1).optional(),
 })
@@ -65,6 +66,7 @@ export const styleBertVits2AudioProfileSchema = synthesisParamsSchema.extend({
   ttsEngine: z.literal('style_bert_vits2'),
   url: z.string().min(1),
   modelName: z.string().min(1),
+  language: z.string().min(1),
   style: z.string().optional(),
   styleWeight: z.number().min(0).max(1).optional(),
   voices: z.array(styleBertVits2VoiceSchema).optional(),
@@ -100,14 +102,18 @@ const googleVoiceSchema = synthesisParamsSchema.extend({
   voiceName: z.string().min(1),
 })
 
-export const googleAudioProfileSchema = synthesisParamsSchema.extend({
-  ttsEngine: z.literal('google'),
-  apiKey: z.string().min(1).optional(),
-  credentialsPath: z.string().min(1).optional(),
-  languageCode: z.string().min(1),
-  voiceName: z.string().min(1),
-  voices: z.array(googleVoiceSchema).optional(),
-})
+export const googleAudioProfileSchema = synthesisParamsSchema
+  .extend({
+    ttsEngine: z.literal('google'),
+    apiKey: z.string().min(1).optional(),
+    credentialsPath: z.string().min(1).optional(),
+    languageCode: z.string().min(1),
+    voiceName: z.string().min(1),
+    voices: z.array(googleVoiceSchema).optional(),
+  })
+  .refine((data) => data.apiKey || data.credentialsPath, {
+    message: 'Google TTS: apiKey または credentialsPath のいずれかが必要です',
+  })
 
 // ============================================
 // Azure TTS
@@ -116,6 +122,7 @@ export const googleAudioProfileSchema = synthesisParamsSchema.extend({
 const azureVoiceSchema = synthesisParamsSchema.extend({
   emotion: z.string().min(1).default('neutral'),
   voiceName: z.string().min(1),
+  languageCode: z.string().min(1).optional(),
   style: z.string().optional(),
   styleDegree: z.number().min(0.01).max(2).optional(),
 })
@@ -124,6 +131,7 @@ export const azureAudioProfileSchema = synthesisParamsSchema.extend({
   ttsEngine: z.literal('azure'),
   subscriptionKey: z.string().min(1),
   region: z.string().min(1),
+  languageCode: z.string().min(1),
   voiceName: z.string().min(1),
   voices: z.array(azureVoiceSchema).optional(),
 })

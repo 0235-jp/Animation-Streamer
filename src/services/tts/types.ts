@@ -78,6 +78,8 @@ export interface ElevenLabsVoiceProfile extends TtsVoiceProfile {
 export interface StyleBertVits2VoiceProfile extends TtsVoiceProfile {
   /** モデル名 */
   modelName: string
+  /** 言語 (JP, EN, ZH等) */
+  language?: string
   /** スタイル */
   style?: string
   /** スタイルの強さ (0.0-1.0) */
@@ -96,6 +98,8 @@ export interface GoogleTtsVoiceProfile extends TtsVoiceProfile {
 export interface AzureTtsVoiceProfile extends TtsVoiceProfile {
   /** 音声名 */
   voiceName: string
+  /** 言語コード (ja-JP, en-US等) */
+  languageCode?: string
   /** スタイル (cheerful, sad, angry, etc.) */
   style?: string
   /** スタイルの度合い */
@@ -129,14 +133,3 @@ export interface TtsEngine {
   ): Promise<string>
 }
 
-/** VOICEVOX互換エンジンの追加インターフェース */
-export interface VoicevoxCompatibleTtsEngine extends TtsEngine {
-  readonly engineType: VoicevoxCompatibleEngineType
-
-  synthesize(
-    text: string,
-    outputPath: string,
-    voice: VoicevoxVoiceProfile,
-    options?: TtsSynthesizeOptions
-  ): Promise<string>
-}

@@ -31,6 +31,7 @@ export function createTtsEngine(profile: AudioProfile): TtsEngine {
       return new StyleBertVits2Engine({
         url: profile.url,
         modelName: profile.modelName,
+        language: profile.language,
         style: profile.style,
         styleWeight: profile.styleWeight,
       })
@@ -46,7 +47,7 @@ export function createTtsEngine(profile: AudioProfile): TtsEngine {
     // Google Cloud TTS
     case 'google':
       return new GoogleTtsEngine({
-        apiKey: profile.apiKey ?? '',
+        apiKey: profile.apiKey,
         languageCode: profile.languageCode,
         voiceName: profile.voiceName,
       })
@@ -56,6 +57,7 @@ export function createTtsEngine(profile: AudioProfile): TtsEngine {
       return new AzureTtsEngine({
         subscriptionKey: profile.subscriptionKey,
         region: profile.region,
+        languageCode: profile.languageCode,
         voiceName: profile.voiceName,
       })
 

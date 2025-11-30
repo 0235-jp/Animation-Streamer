@@ -8,6 +8,8 @@ export interface AzureTtsConfig {
   subscriptionKey: string
   /** リージョン（必須）: japaneast, eastus等 */
   region: string
+  /** 言語コード（必須）: ja-JP, en-US等 */
+  languageCode: string
   /** 音声名（必須）: ja-JP-NanamiNeural等 */
   voiceName: string
 }
@@ -21,11 +23,13 @@ export class AzureTtsEngine implements TtsEngine {
   readonly engineType = 'azure' as const
   private readonly subscriptionKey: string
   private readonly region: string
+  private readonly languageCode: string
   private readonly voiceName: string
 
   constructor(config: AzureTtsConfig) {
     this.subscriptionKey = config.subscriptionKey
     this.region = config.region
+    this.languageCode = config.languageCode
     this.voiceName = config.voiceName
   }
 
@@ -44,7 +48,8 @@ export class AzureTtsEngine implements TtsEngine {
       options?.endpoint ?? `https://${this.region}.tts.speech.microsoft.com/cognitiveservices/v1`
 
     const voiceName = voice.voiceName ?? this.voiceName
-    const ssml = this.buildSsml(normalizedText, voiceName, voice)
+    const languageCode = voice.languageCode ?? this.languageCode
+    const ssml = this.buildSsml(normalizedText, voiceName, languageCode, voice)
 
     logger.debug({ endpoint, voiceName }, 'Azure TTS request')
 
@@ -74,6 +79,7 @@ export class AzureTtsEngine implements TtsEngine {
   private buildSsml(
     text: string,
     voiceName: string,
+    languageCode: string,
     voice: AzureTtsVoiceProfile
   ): string {
     const escapedText = this.escapeXml(text)
@@ -99,7 +105,7 @@ export class AzureTtsEngine implements TtsEngine {
     const prosodyOpen = prosodyAttrs.length > 0 ? `<prosody ${prosodyAttrs.join(' ')}>` : ''
     const prosodyClose = prosodyAttrs.length > 0 ? '</prosody>' : ''
 
-    return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="ja-JP">
+    return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="${languageCode}">
   <voice name="${voiceName}">
     ${expressAs}
     ${prosodyOpen}

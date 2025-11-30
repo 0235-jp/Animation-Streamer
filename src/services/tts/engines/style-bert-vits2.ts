@@ -8,6 +8,8 @@ export interface StyleBertVits2Config {
   url: string
   /** モデル名（必須） */
   modelName: string
+  /** 言語（必須）: JP, EN, ZH等 */
+  language: string
   /** スタイル（オプション） */
   style?: string
   /** スタイルの強さ（オプション） */
@@ -23,12 +25,14 @@ export class StyleBertVits2Engine implements TtsEngine {
   readonly engineType = 'style_bert_vits2' as const
   private readonly endpoint: string
   private readonly modelName: string
+  private readonly language: string
   private readonly style?: string
   private readonly styleWeight?: number
 
   constructor(config: StyleBertVits2Config) {
     this.endpoint = config.url.replace(/\/+$/, '')
     this.modelName = config.modelName
+    this.language = config.language
     this.style = config.style
     this.styleWeight = config.styleWeight
   }
@@ -46,12 +50,13 @@ export class StyleBertVits2Engine implements TtsEngine {
 
     const endpoint = options?.endpoint ?? this.endpoint
     const modelName = voice.modelName ?? this.modelName
+    const language = voice.language ?? this.language
 
     // Style-Bert-VITS2 API パラメータ
     const params = new URLSearchParams({
       text: normalizedText,
       model_name: modelName,
-      language: 'JP',
+      language,
     })
 
     // オプションパラメータは指定されている場合のみ追加
