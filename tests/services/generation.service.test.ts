@@ -5,13 +5,23 @@ import { GenerationService, ActionProcessingError } from '../../src/services/gen
 import { NoAudioTrackError } from '../../src/services/media-pipeline'
 import type { ClipPlanResult, ClipPlanner } from '../../src/services/clip-planner'
 import type { MediaPipeline } from '../../src/services/media-pipeline'
-import type { VoicevoxClient } from '../../src/services/voicevox'
 import type { ResolvedConfig } from '../../src/config/loader'
 import type { ActionResult, GenerateRequestPayload } from '../../src/types/generate'
 import { createResolvedConfig } from '../factories/config'
 
 vi.mock('node:crypto', () => ({
   randomUUID: vi.fn(() => 'test-uuid'),
+}))
+
+// Mock TTS engine
+const mockTtsEngine = {
+  engineType: 'voicevox' as const,
+  synthesize: vi.fn().mockResolvedValue('/tmp/voice.wav'),
+}
+
+// Mock the entire TTS module
+vi.mock('../../src/services/tts', () => ({
+  createTtsEngine: vi.fn(() => mockTtsEngine),
 }))
 
 const mockFs = () => {
@@ -62,19 +72,14 @@ const createService = (configOverride?: ResolvedConfig) => {
     extractSegment: vi.fn(),
   }
 
-  const voicevox = {
-    synthesize: vi.fn().mockResolvedValue('/tmp/voice.wav'),
-  }
-
   const config = configOverride ?? createResolvedConfig()
   const service = new GenerationService({
     config,
     clipPlanner: clipPlanner as unknown as ClipPlanner,
     mediaPipeline: mediaPipeline as unknown as MediaPipeline,
-    voicevox: voicevox as unknown as VoicevoxClient,
   })
 
-  return { service, clipPlanner, mediaPipeline, voicevox, config }
+  return { service, clipPlanner, mediaPipeline, ttsEngine: mockTtsEngine, config }
 }
 
 const withPreset = (
@@ -91,7 +96,7 @@ describe('GenerationService', () => {
   })
 
   it('returns combined batch result for non-stream payloads', async () => {
-    const { service, clipPlanner, mediaPipeline, voicevox } = createService()
+    const { service, clipPlanner, mediaPipeline, ttsEngine } = createService()
     const payload = withPreset({
       stream: false,
       requests: [
@@ -107,18 +112,17 @@ describe('GenerationService', () => {
     expect(result.result.motionIds).toBeUndefined()
     expect(clipPlanner.buildSpeechPlan).toHaveBeenCalledTimes(1)
     expect(clipPlanner.buildIdlePlan).toHaveBeenCalledTimes(1)
-    expect(voicevox.synthesize).toHaveBeenCalledWith(
+    expect(ttsEngine.synthesize).toHaveBeenCalledWith(
       'こんにちは',
       expect.stringContaining('voice-1.wav'),
-      expect.objectContaining({ speakerId: 1 }),
-      expect.objectContaining({ endpoint: 'http://127.0.0.1:50021' })
+      expect.objectContaining({ speakerId: 1 })
     )
     expect(mediaPipeline.concatAudioFiles).toHaveBeenCalled()
     expect(mediaPipeline.compose).toHaveBeenCalledTimes(1)
   })
 
   it('selects emotion-specific TTS profile when available', async () => {
-    const { service, voicevox } = createService()
+    const { service, ttsEngine } = createService()
     const payload = withPreset({
       stream: false,
       requests: [{ action: 'speak', params: { text: 'やっほー', emotion: 'happy' } }],
@@ -126,11 +130,10 @@ describe('GenerationService', () => {
 
     await service.processBatch(payload)
 
-    expect(voicevox.synthesize).toHaveBeenCalledWith(
+    expect(ttsEngine.synthesize).toHaveBeenCalledWith(
       'やっほー',
       expect.any(String),
-      expect.objectContaining({ speakerId: 2, pitchScale: 0.2 }),
-      expect.objectContaining({ endpoint: 'http://127.0.0.1:50021' })
+      expect.objectContaining({ speakerId: 2, pitchScale: 0.2 })
     )
   })
 
@@ -152,7 +155,7 @@ describe('GenerationService', () => {
       },
     }
     customConfig.presetMap.set(customConfig.presets[0].id, customConfig.presets[0])
-    const { service, voicevox } = createService(customConfig)
+    const { service, ttsEngine } = createService(customConfig)
     const payload = withPreset({
       stream: false,
       requests: [{ action: 'speak', params: { text: 'fallback test', emotion: 'angry' } }],
@@ -160,11 +163,10 @@ describe('GenerationService', () => {
 
     await service.processBatch(payload)
 
-    expect(voicevox.synthesize).toHaveBeenCalledWith(
+    expect(ttsEngine.synthesize).toHaveBeenCalledWith(
       'fallback test',
       expect.any(String),
-      expect.objectContaining({ speakerId: 9, volumeScale: 0.7 }),
-      expect.objectContaining({ endpoint: 'http://127.0.0.1:50021' })
+      expect.objectContaining({ speakerId: 9, volumeScale: 0.7 })
     )
   })
 
@@ -271,8 +273,8 @@ describe('GenerationService', () => {
   })
 
   it('wraps unexpected errors in streaming mode as ActionProcessingError(500)', async () => {
-    const { service, voicevox } = createService()
-    voicevox.synthesize.mockRejectedValue(new Error('VOICEVOX failure'))
+    const { service, ttsEngine } = createService()
+    ttsEngine.synthesize.mockRejectedValue(new Error('TTS failure'))
 
     const payload = withPreset({
       stream: true,
@@ -280,7 +282,7 @@ describe('GenerationService', () => {
     })
 
     await expect(service.processBatch(payload)).rejects.toMatchObject({
-      message: 'VOICEVOX failure',
+      message: 'TTS failure',
       statusCode: 500,
       requestId: '1',
     })

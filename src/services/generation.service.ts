@@ -1,10 +1,16 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { ResolvedAction, ResolvedPreset, ResolvedConfig, type VoicevoxVoiceProfile } from '../config/loader'
+import {
+  ResolvedAction,
+  ResolvedPreset,
+  ResolvedConfig,
+  type ResolvedVoiceProfile,
+  type ResolvedAudioProfile,
+} from '../config/loader'
 import { ClipPlanner } from './clip-planner'
 import { MediaPipeline, type ClipSource, NoAudioTrackError } from './media-pipeline'
-import { VoicevoxClient, type VoicevoxVoiceOptions } from './voicevox'
+import { type TtsEngine, createTtsEngine, type TtsVoiceProfile } from './tts'
 import type { ActionResult, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler } from '../types/generate'
 import { logger } from '../utils/logger'
 
@@ -51,18 +57,28 @@ export class GenerationService {
   private readonly config: ResolvedConfig
   private readonly clipPlanner: ClipPlanner
   private readonly mediaPipeline: MediaPipeline
-  private readonly voicevox: VoicevoxClient
+  /** プリセットIDごとのTTSエンジンキャッシュ */
+  private readonly ttsEngines: Map<string, TtsEngine> = new Map()
 
   constructor(deps: {
     config: ResolvedConfig
     clipPlanner: ClipPlanner
     mediaPipeline: MediaPipeline
-    voicevox: VoicevoxClient
   }) {
     this.config = deps.config
     this.clipPlanner = deps.clipPlanner
     this.mediaPipeline = deps.mediaPipeline
-    this.voicevox = deps.voicevox
+  }
+
+  /** プリセットに対応するTTSエンジンを取得（遅延初期化） */
+  private getTtsEngine(preset: ResolvedPreset): TtsEngine {
+    let engine = this.ttsEngines.get(preset.id)
+    if (!engine) {
+      engine = createTtsEngine(preset.audioProfile.engineConfig)
+      this.ttsEngines.set(preset.id, engine)
+      logger.info({ presetId: preset.id, engineType: engine.engineType }, 'TTS engine initialized')
+    }
+    return engine
   }
 
   async processBatch(
@@ -357,8 +373,9 @@ export class GenerationService {
     const emotion = this.ensureOptionalString(params.emotion) ?? DEFAULT_EMOTION
 
     const audioPath = path.join(jobDir, `voice-${requestId}.wav`)
-    const { voice, endpoint } = this.resolveVoiceProfile(preset, emotion)
-    await this.voicevox.synthesize(text, audioPath, voice, { endpoint })
+    const voice = this.resolveVoiceProfile(preset, emotion)
+    const ttsEngine = this.getTtsEngine(preset)
+    await ttsEngine.synthesize(text, audioPath, voice as TtsVoiceProfile)
     const normalizedAudio = await this.mediaPipeline.normalizeAudio(audioPath, jobDir, `voice-${requestId}`)
     const trimmedAudio = await this.mediaPipeline.trimAudioSilence(normalizedAudio, jobDir, `voice-${requestId}-trim`)
     const trimmedDuration = await this.mediaPipeline.getAudioDurationMs(trimmedAudio)
@@ -462,13 +479,14 @@ export class GenerationService {
     }
   }
 
+  /** 感情に対応する音声プロファイルを解決 */
   private resolveVoiceProfile(
     preset: ResolvedPreset,
     emotion: string | undefined
-  ): { voice: VoicevoxVoiceOptions; endpoint: string } {
+  ): ResolvedVoiceProfile {
     const normalizedEmotion = (emotion ?? 'neutral').trim().toLowerCase()
-    let matchingVoice: VoicevoxVoiceProfile | undefined
-    let neutralVoice: VoicevoxVoiceProfile | undefined
+    let matchingVoice: ResolvedVoiceProfile | undefined
+    let neutralVoice: ResolvedVoiceProfile | undefined
 
     for (const voice of preset.audioProfile.voices) {
       if (voice.emotion === normalizedEmotion) {
@@ -480,8 +498,7 @@ export class GenerationService {
       }
     }
 
-    const selected = matchingVoice ?? neutralVoice ?? preset.audioProfile.defaultVoice
-    return { voice: selected, endpoint: preset.audioProfile.voicevoxUrl }
+    return matchingVoice ?? neutralVoice ?? preset.audioProfile.defaultVoice
   }
 
   private async buildIdlePlanData(
