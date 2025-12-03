@@ -1,0 +1,24 @@
+{
+  "name": "ai-streamer-client-example",
+  "version": "0.0.1",
+  "description": "ai-streamer APIを利用するサンプルクライアント",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "build": "tsc",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^2.0.76",
+    "ai": "^5.0.106",
+    "ws": "^8.18.0",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
