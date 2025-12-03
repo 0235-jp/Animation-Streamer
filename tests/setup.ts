@@ -4,7 +4,7 @@ import { afterEach, beforeAll, beforeEach, vi } from 'vitest'
 
 const projectRoot = path.resolve(process.cwd())
 const motionsDir = path.join(projectRoot, 'motions')
-const exampleMotionsDir = path.join(projectRoot, 'example/motion')
+const exampleMotionsDir = path.join(projectRoot, 'example/motions')
 const outputDir = path.join(projectRoot, 'output')
 
 beforeAll(async () => {

@@ -1,0 +1,11 @@
+{
+  "llm": {
+    "apiKey": "sk-...",
+    "model": "gpt-5-mini",
+    "systemPrompt": "あなたは配信者のAIアシスタントです。視聴者のコメントに対して短く親しみやすい返答をしてください。返答は50文字以内にしてください。"
+  },
+  "streamer": {
+    "baseUrl": "http://localhost:4000",
+    "presetId": "anchor-a"
+  }
+}
