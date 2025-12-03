@@ -294,15 +294,30 @@ export class MediaPipeline {
 
   /**
    * 入力ファイルに音声トラックがなければ無音音声を追加したバージョンを作成する。
-   * 音声トラックがあればそのまま入力ファイルのパスを返す。
+   * 音声トラックがあれば jobDir にコピーしたファイルのパスを返す。
+   * jobDir が指定されている場合、常に jobDir 内にファイルを作成する。
    */
   async ensureAudioTrack(videoPath: string, jobDir?: string): Promise<string> {
     const hasAudio = await this.hasAudioStream(videoPath)
-    if (hasAudio) {
-      return videoPath
-    }
     const dir = jobDir ?? (await this.createJobDir())
     const outputPath = path.join(dir, `with-audio-${randomUUID()}.mp4`)
+
+    if (hasAudio) {
+      // 音声トラックがある場合はそのままコピー
+      await runCommand('ffmpeg', [
+        '-y',
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-i',
+        videoPath,
+        '-c',
+        'copy',
+        outputPath,
+      ])
+      return outputPath
+    }
+
     const durationMs = await this.getVideoDurationMs(videoPath)
     const durationSec = Math.max(0.1, durationMs / 1000)
 
