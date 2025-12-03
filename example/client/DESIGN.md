@@ -147,6 +147,12 @@ interface LLMResponse {
   emotion: string;  // neutral, happy, sad, angry, surprised
 }
 
+interface LLMServiceConfig {
+  apiKey: string;
+  model: string;
+  systemPrompt: string;
+}
+
 interface LLMService {
   generateResponse(comment: string): Promise<LLMResponse>;
 }
@@ -155,36 +161,27 @@ interface LLMService {
 **実装例:**
 
 ```typescript
-import { generateText } from 'ai';
-import { openai } from '@ai-sdk/openai';
+import { generateObject } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
+import { z } from 'zod';
 
-const result = await generateText({
-  model: openai('gpt-4o-mini', { structuredOutputs: true }),
+const responseSchema = z.object({
+  text: z.string().describe('視聴者への返答'),
+  emotion: z.enum(['neutral', 'happy', 'sad', 'angry', 'surprised']).describe('返答の感情'),
+});
+
+const openai = createOpenAI({ apiKey: config.apiKey });
+
+const result = await generateObject({
+  model: openai.chat(config.model),
+  schema: responseSchema,
   messages: [
     { role: 'system', content: systemPrompt },
     { role: 'user', content: comment }
   ],
-  responseFormat: {
-    type: 'json_schema',
-    jsonSchema: {
-      name: 'response',
-      schema: {
-        type: 'object',
-        properties: {
-          text: { type: 'string', description: '視聴者への返答' },
-          emotion: {
-            type: 'string',
-            enum: ['neutral', 'happy', 'sad', 'angry', 'surprised'],
-            description: '返答の感情'
-          }
-        },
-        required: ['text', 'emotion']
-      }
-    }
-  }
 });
 
-const response: LLMResponse = JSON.parse(result.text);
+const response: LLMResponse = result.object;
 ```
 
 ### 5.3 StreamerClient
@@ -229,8 +226,9 @@ async sendText(response: LLMResponse): Promise<void> {
 ```json
 {
   "llm": {
+    "apiKey": "sk-...",
     "model": "gpt-4o-mini",
-    "systemPrompt": "あなたは配信者のAIアシスタントです。視聴者のコメントに対して短く親しみやすい返答をしてください。"
+    "systemPrompt": "あなたは配信者のAIアシスタントです。視聴者のコメントに対して短く親しみやすい返答をしてください。返答は50文字以内にしてください。"
   },
   "streamer": {
     "baseUrl": "http://localhost:4000",
@@ -243,7 +241,7 @@ async sendText(response: LLMResponse): Promise<void> {
 
 | 変数名 | 説明 |
 |--------|------|
-| `OPENAI_API_KEY` | OpenAI APIキー |
+| `CONFIG_PATH` | 設定ファイルのパス（デフォルト: `config.json`） |
 
 ---
 
