@@ -127,3 +127,27 @@ OBS のメディアソースに `rtmp://localhost:1935/live/main` を指定し�
 - 出力ファイルは常にプロジェクト直下の `output/` に保存されます（設定不要）。Docker では `./output:/app/output` をマウントし、`RESPONSE_PATH_BASE` にホスト側 `output` の絶対パスを渡すことで API レスポンスにホスト上のパスを返せます。
 
 `config/example.stream-profile.docker.json` / `config/example.stream-profile.local.json` には Anchor のサンプルが含まれているので、必要に応じて `presets[]` を増やし、`presetId` を切り替えて利用してください。
+
+## モーション動画の仕様統一
+
+モーション動画を連結する際、すべてのファイルで **解像度・フレームレート・コーデック・ピクセルフォーマット** が統一されている必要があります。仕様が異なるファイルが混在すると、動画が途中で固まったり乱れたりする原因になります。
+
+起動時に自動で仕様チェックが行われ、不一致がある場合は警告ログと推奨変換コマンドが出力されます。
+
+```
+⚠️  モーション仕様の不一致を検出
+
+--- モーション仕様一覧 ---
+
+[896x1152 16/1fps h264 yuv420p] ← 推奨基準 (最多)
+  - idle-a-large
+  - idle-a-small
+
+[1920x1080 24000/1001fps h264 yuv420p]
+  - talk-a-large
+
+--- 推奨変換コマンド ---
+ffmpeg -i "talk_large.mp4" -vf "scale=896:1152,fps=16" -c:v libx264 -pix_fmt yuv420p -an "talk_large_converted.mp4"
+```
+
+多数決で推奨基準が決定され、変換が必要なファイルのコマンドが自動生成されます。
