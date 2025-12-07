@@ -50,6 +50,11 @@ export class STTClient {
       return text
     } catch (error) {
       logger.error({ error, audioPath }, 'STT transcription failed')
+      if (error instanceof OpenAI.APIError) {
+        throw new Error(
+          `音声認識に失敗しました: [${error.status}] ${error.name} - ${error.message}`
+        )
+      }
       throw new Error(
         `音声認識に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`
       )
