@@ -8,8 +8,9 @@
     "outputUrl": "rtmp://127.0.0.1:1936/live/main"
   },
   "stt": {
-    "engine": "whisper",
-    "whisperModel": "base"
+    "baseUrl": "http://faster-whisper:8000/v1",
+    "model": "whisper-1",
+    "language": "ja"
   },
   "presets": [
     {

@@ -499,7 +499,12 @@ export class GenerationService {
       )
     }
 
-    const sttClient = new STTClient({ modelName: sttConfig.whisperModel })
+    const sttClient = new STTClient({
+      baseUrl: sttConfig.baseUrl,
+      apiKey: sttConfig.apiKey,
+      model: sttConfig.model,
+      language: sttConfig.language,
+    })
     const text = await sttClient.transcribe(audioPath)
 
     if (!text.trim()) {

@@ -46,10 +46,12 @@ export const audioProfileSchema = synthesisParamsSchema.extend({
   voices: z.array(voicevoxVoiceSchema).optional(),
 })
 
-// STT設定スキーマ（トップレベル）
+// STT設定スキーマ（トップレベル）- OpenAI互換API
 export const sttConfigSchema = z.object({
-  engine: z.enum(['whisper']),
-  whisperModel: z.string().min(1).default('base'),
+  baseUrl: z.string().min(1).default('http://localhost:8000/v1'),
+  apiKey: z.string().optional(),
+  model: z.string().min(1).default('whisper-1'),
+  language: z.string().min(1).default('ja'),
 })
 
 const presetSchema = z.object({

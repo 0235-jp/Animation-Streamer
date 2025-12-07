@@ -53,8 +53,10 @@ export interface VoicevoxVoiceProfile {
 }
 
 export interface ResolvedSTTConfig {
-  engine: 'whisper'
-  whisperModel: string
+  baseUrl: string
+  apiKey?: string
+  model: string
+  language: string
 }
 
 export interface ResolvedAudioProfile {
@@ -122,8 +124,10 @@ export const loadConfig = async (configPath: string): Promise<ResolvedConfig> =>
     rtmp: parsed.rtmp,
     stt: parsed.stt
       ? {
-          engine: parsed.stt.engine,
-          whisperModel: parsed.stt.whisperModel,
+          baseUrl: parsed.stt.baseUrl,
+          apiKey: parsed.stt.apiKey,
+          model: parsed.stt.model,
+          language: parsed.stt.language,
         }
       : undefined,
     presets,

@@ -388,35 +388,41 @@ interface SpeakParams {
   └─────────────────────────────────────────────────┘
 ```
 
-### 11.5 STTクライアント（nodejs-whisper）
-- **パッケージ**: `nodejs-whisper`（whisper.cpp ベースの Node.js バインディング）
+### 11.5 STTクライアント（OpenAI互換API）
+- **バックエンド**: OpenAI互換APIをサポートする任意のSTTサーバー
+  - **faster-whisper-server** (推奨): Docker で簡単に起動、高速
+  - **OpenAI Whisper API**: クラウドサービス
 - **特徴**:
-  - Pythonランタイム不要
-  - CPU最適化（CUDA対応可能）
-  - 自動で音声を WAV 16kHz に変換
+  - OpenAI SDK を使用した統一インターフェース
+  - ローカルサーバーとクラウドサービスを設定で切り替え可能
   - 日本語対応
 
 ```typescript
 // src/services/stt.ts
-import { nodewhisper } from 'nodejs-whisper'
+import OpenAI from 'openai'
 
 export class STTClient {
-  private modelName: string
+  private client: OpenAI
+  private model: string
+  private language: string
 
-  constructor(options: { modelName?: string } = {}) {
-    this.modelName = options.modelName ?? 'base'
+  constructor(options: { baseUrl: string; apiKey?: string; model?: string; language?: string }) {
+    this.client = new OpenAI({
+      baseURL: options.baseUrl,
+      apiKey: options.apiKey ?? 'dummy-key',
+    })
+    this.model = options.model ?? 'whisper-1'
+    this.language = options.language ?? 'ja'
   }
 
   async transcribe(audioPath: string): Promise<string> {
-    const result = await nodewhisper(audioPath, {
-      modelName: this.modelName,
-      autoDownloadModelName: this.modelName,
-      whisperOptions: {
-        language: 'ja',
-        word_timestamps: false,
-      }
+    const audioFile = fs.createReadStream(audioPath)
+    const response = await this.client.audio.transcriptions.create({
+      file: audioFile,
+      model: this.model,
+      language: this.language,
     })
-    return result.map(seg => seg.speech).join('')
+    return response.text.trim()
   }
 }
 ```
@@ -428,21 +434,24 @@ STT設定はトップレベルに配置（プリセット共通）:
   "server": { ... },
   "rtmp": { ... },
   "stt": {
-    "engine": "whisper",
-    "whisperModel": "base"
+    "baseUrl": "http://localhost:8000/v1",
+    "model": "whisper-1",
+    "language": "ja"
   },
   "presets": [...]
 }
 ```
 
-- `stt.engine`: 現在は `"whisper"`（ローカルwhisper.cpp）のみサポート
-- `stt.whisperModel`: 使用するモデル（`tiny`, `base`, `small`, `medium`, `large`）
+- `stt.baseUrl`: OpenAI互換APIのベースURL（ローカル: `http://localhost:8000/v1`、OpenAI: `https://api.openai.com/v1`）
+- `stt.apiKey`: APIキー（OpenAI使用時は必須、ローカルサーバーは通常不要）
+- `stt.model`: 使用するモデル（`whisper-1` など）
+- `stt.language`: 音声認識言語（デフォルト: `ja`）
 
 ### 11.7 バリデーション
 - `text` と `audio` は排他（両方指定は 400 エラー）
 - `audio` 指定時は `path` か `base64` のどちらか一方が必須
 - `audio.transcribe` は `audio` 指定時のみ有効
-- サポートする音声フォーマット: WAV, MP3, OGG, FLAC（ffmpeg/nodejs-whisper が対応するもの）
+- サポートする音声フォーマット: WAV, MP3, OGG, FLAC（ffmpeg/whisper が対応するもの）
 
 ### 11.8 実装対象ファイル
 | ファイル | 変更内容 |

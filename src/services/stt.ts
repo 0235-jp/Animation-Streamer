@@ -1,20 +1,29 @@
+import fs from 'node:fs'
+import OpenAI from 'openai'
 import { logger } from '../utils/logger'
 
 export interface STTOptions {
-  modelName?: string
+  baseUrl: string
+  apiKey?: string
+  model?: string
   language?: string
 }
 
 /**
  * STT (Speech-to-Text) クライアント
- * nodejs-whisper を使用して音声をテキストに変換する
+ * OpenAI互換API（faster-whisper-server等）を使用して音声をテキストに変換する
  */
 export class STTClient {
-  private modelName: string
+  private client: OpenAI
+  private model: string
   private language: string
 
-  constructor(options: STTOptions = {}) {
-    this.modelName = options.modelName ?? 'base'
+  constructor(options: STTOptions) {
+    this.client = new OpenAI({
+      baseURL: options.baseUrl,
+      apiKey: options.apiKey ?? 'dummy-key', // ローカルサーバーはAPIキー不要の場合が多い
+    })
+    this.model = options.model ?? 'whisper-1'
     this.language = options.language ?? 'ja'
   }
 
@@ -24,22 +33,18 @@ export class STTClient {
    * @returns 変換されたテキスト
    */
   async transcribe(audioPath: string): Promise<string> {
-    logger.info({ audioPath, modelName: this.modelName }, 'Starting STT transcription')
+    logger.info({ audioPath, model: this.model }, 'Starting STT transcription')
 
     try {
-      // nodejs-whisper を動的インポート（インストールされていない場合のエラーハンドリング）
-      const { nodewhisper } = await import('nodejs-whisper')
+      const audioFile = fs.createReadStream(audioPath)
 
-      // nodejs-whisper は直接テキストを返す
-      const text = await nodewhisper(audioPath, {
-        modelName: this.modelName,
-        autoDownloadModelName: this.modelName,
-        whisperOptions: {
-          language: this.language,
-          wordTimestamps: false,
-        },
+      const response = await this.client.audio.transcriptions.create({
+        file: audioFile,
+        model: this.model,
+        language: this.language,
       })
 
+      const text = response.text.trim()
       logger.info({ audioPath, textLength: text.length }, 'STT transcription completed')
 
       return text
