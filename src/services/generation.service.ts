@@ -480,6 +480,14 @@ export class GenerationService {
    * 外部音声ファイルをジョブディレクトリにコピー
    */
   private async copyExternalAudio(externalPath: string, jobDir: string, requestId: string): Promise<string> {
+    try {
+      await fs.access(externalPath)
+    } catch {
+      throw new ActionProcessingError(
+        `指定された音声ファイルが見つかりません: ${externalPath}`,
+        requestId
+      )
+    }
     const ext = path.extname(externalPath) || '.wav'
     const audioPath = path.join(jobDir, `audio-input-${requestId}${ext}`)
     await fs.copyFile(externalPath, audioPath)
