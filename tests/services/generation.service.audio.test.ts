@@ -85,7 +85,6 @@ function createMockPreset(): ResolvedPreset {
     audioProfile: {
       ttsEngine: 'voicevox',
       voicevoxUrl: 'http://localhost:50021',
-      defaultVoice: { speakerId: 1, emotion: 'neutral' },
       voices: [{ speakerId: 1, emotion: 'neutral' }],
     },
     actionsMap: new Map(),
