@@ -422,20 +422,21 @@ export class STTClient {
 ```
 
 ### 11.6 設定拡張
+STT設定はトップレベルに配置（プリセット共通）:
 ```json
 {
-  "presets": [{
-    "id": "anchor-a",
-    "audioProfile": {
-      "ttsEngine": "voicevox",
-      "voicevoxUrl": "http://127.0.0.1:50021",
-      "speakerId": 1,
-      "sttEngine": "whisper",
-      "whisperModel": "base"
-    }
-  }]
+  "server": { ... },
+  "rtmp": { ... },
+  "stt": {
+    "engine": "whisper",
+    "whisperModel": "base"
+  },
+  "presets": [...]
 }
 ```
+
+- `stt.engine`: 現在は `"whisper"`（ローカルwhisper.cpp）のみサポート
+- `stt.whisperModel`: 使用するモデル（`tiny`, `base`, `small`, `medium`, `large`）
 
 ### 11.7 バリデーション
 - `text` と `audio` は排他（両方指定は 400 エラー）
@@ -446,15 +447,15 @@ export class STTClient {
 ### 11.8 実装対象ファイル
 | ファイル | 変更内容 |
 |---------|---------|
-| `src/types/generate.ts` | `SpeakParams` 型を追加 |
+| `src/types/generate.ts` | `SpeakParams`, `AudioInput` 型を追加 |
 | `src/api/schema.ts` | speak パラメータのバリデーション追加 |
 | `src/services/generation.service.ts` | `buildSpeakPlan()` で音声入力の分岐処理 |
 | `src/services/stt.ts` | 新規: STTClient クラス |
-| `src/config/schema.ts` | `sttEngine`, `whisperModel` を audioProfile に追加 |
+| `src/config/schema.ts` | トップレベルに `stt` 設定を追加 |
+| `src/config/loader.ts` | `ResolvedSTTConfig` 型と設定解決ロジック追加 |
 
 ## 12. 未実装項目 / TODO
 - `text` / `generate` エンドポイント内部のTTS呼び出し、音声合成、ストリーム割込み／MP4出力処理。
 - 音声/動画素材の正当性チェック、自動ダウンロード機構。
 - 簡易認証(APIキー)とTLS化。
 - 単体テスト・結合テスト。
-- 音声入力機能（セクション11）の実装。

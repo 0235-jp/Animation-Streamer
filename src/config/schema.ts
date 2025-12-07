@@ -44,8 +44,11 @@ export const audioProfileSchema = synthesisParamsSchema.extend({
   voicevoxUrl: z.string().min(1),
   speakerId: z.number().int().nonnegative().default(1),
   voices: z.array(voicevoxVoiceSchema).optional(),
-  // STT設定（オプション）
-  sttEngine: z.enum(['whisper']).optional(),
+})
+
+// STT設定スキーマ（トップレベル）
+export const sttConfigSchema = z.object({
+  engine: z.enum(['whisper']),
   whisperModel: z.string().min(1).default('base'),
 })
 
@@ -77,6 +80,7 @@ export const configSchema = z.object({
       outputUrl: z.string().min(1).default('rtmp://127.0.0.1:1936/live/main'),
     })
     .default({ outputUrl: 'rtmp://127.0.0.1:1936/live/main' }),
+  stt: sttConfigSchema.optional(),
   presets: z.array(presetSchema).min(1),
 })
 

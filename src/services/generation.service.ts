@@ -440,7 +440,7 @@ export class GenerationService {
 
     // transcribe=true の場合は STT → TTS
     if (audio.transcribe) {
-      const text = await this.transcribeAudio(audioFilePath, preset, requestId)
+      const text = await this.transcribeAudio(audioFilePath, requestId)
       logger.info({ requestId, textLength: text.length }, 'Audio transcribed, synthesizing with TTS')
       return this.synthesizeFromText(text, preset, jobDir, requestId, emotion)
     }
@@ -490,11 +490,11 @@ export class GenerationService {
   /**
    * 音声をテキストに変換（STT）
    */
-  private async transcribeAudio(audioPath: string, preset: ResolvedPreset, requestId: string): Promise<string> {
-    const sttConfig = preset.audioProfile.stt
+  private async transcribeAudio(audioPath: string, requestId: string): Promise<string> {
+    const sttConfig = this.config.stt
     if (!sttConfig) {
       throw new ActionProcessingError(
-        'STT を使用するには audioProfile.sttEngine を設定してください',
+        'STT を使用するには設定ファイルの stt セクションを設定してください',
         requestId
       )
     }

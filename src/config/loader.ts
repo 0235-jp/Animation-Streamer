@@ -52,7 +52,7 @@ export interface VoicevoxVoiceProfile {
   outputStereo?: boolean
 }
 
-export interface ResolvedSTTProfile {
+export interface ResolvedSTTConfig {
   engine: 'whisper'
   whisperModel: string
 }
@@ -62,7 +62,6 @@ export interface ResolvedAudioProfile {
   voicevoxUrl: string
   defaultVoice: VoicevoxVoiceProfile
   voices: VoicevoxVoiceProfile[]
-  stt?: ResolvedSTTProfile
 }
 
 export interface ResolvedPreset {
@@ -83,13 +82,14 @@ export interface ResolvedPaths {
   responsePathBase?: string
 }
 
-export interface ResolvedConfig extends Omit<StreamerConfig, 'presets'> {
+export interface ResolvedConfig extends Omit<StreamerConfig, 'presets' | 'stt'> {
   presets: ResolvedPreset[]
   presetMap: Map<string, ResolvedPreset>
   paths: ResolvedPaths
   rtmp: {
     outputUrl: string
   }
+  stt?: ResolvedSTTConfig
 }
 
 export const loadConfig = async (configPath: string): Promise<ResolvedConfig> => {
@@ -120,6 +120,12 @@ export const loadConfig = async (configPath: string): Promise<ResolvedConfig> =>
   return {
     server: parsed.server,
     rtmp: parsed.rtmp,
+    stt: parsed.stt
+      ? {
+          engine: parsed.stt.engine,
+          whisperModel: parsed.stt.whisperModel,
+        }
+      : undefined,
     presets,
     presetMap,
     paths: {
@@ -225,12 +231,6 @@ const resolvePreset = (
       voicevoxUrl: preset.audioProfile.voicevoxUrl,
       defaultVoice,
       voices,
-      stt: preset.audioProfile.sttEngine
-        ? {
-            engine: preset.audioProfile.sttEngine,
-            whisperModel: preset.audioProfile.whisperModel ?? 'base',
-          }
-        : undefined,
     },
   }
 }
