@@ -6,8 +6,8 @@ import { z } from 'zod'
  */
 export const audioInputSchema = z
   .object({
-    path: z.string().optional(),
-    base64: z.string().optional(),
+    path: z.string().min(1).optional(),
+    base64: z.string().min(1).optional(),
     transcribe: z.boolean().optional(),
   })
   .refine((data) => (data.path !== undefined) !== (data.base64 !== undefined), {
