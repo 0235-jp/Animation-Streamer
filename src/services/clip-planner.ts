@@ -173,10 +173,6 @@ export class ClipPlanner {
       if (majoritySpec) {
         const toConvert = entries.filter((e) => !specsMatch(e.spec, majoritySpec!))
         if (toConvert.length > 0) {
-          const fpsValue = majoritySpec.frameRate.includes('/')
-            ? majoritySpec.frameRate.split('/')[0]
-            : majoritySpec.frameRate
-
           lines.push('')
           lines.push('--- 推奨変換コマンド ---')
           lines.push(`基準仕様: ${majorityKey} (${majorityCount}ファイルが該当)`)
@@ -185,9 +181,9 @@ export class ClipPlanner {
           lines.push('')
 
           for (const entry of toConvert) {
-            const outputPath = entry.path.replace(/\.mp4$/, '_converted.mp4')
+            const outputPath = entry.path.replace(/\.[^.]+$/, '_converted.mp4')
             lines.push(
-              `ffmpeg -i "${entry.path}" -vf "scale=${majoritySpec.width}:${majoritySpec.height},fps=${fpsValue}" -c:v libx264 -pix_fmt ${majoritySpec.pixelFormat} -an "${outputPath}"`
+              `ffmpeg -i "${entry.path}" -vf "scale=${majoritySpec.width}:${majoritySpec.height},fps=${majoritySpec.frameRate}" -c:v libx264 -pix_fmt ${majoritySpec.pixelFormat} -an "${outputPath}"`
             )
           }
         }
