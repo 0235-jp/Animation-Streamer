@@ -6,7 +6,8 @@ import {
   type ResolvedSpeechPools,
   type ResolvedTransitionMotion,
 } from '../config/loader'
-import type { ClipSource, MediaPipeline } from './media-pipeline'
+import type { ClipSource, MediaPipeline, VideoSpec } from './media-pipeline'
+import { logger } from '../utils/logger'
 
 interface ClipCandidate {
   motion: ResolvedIdleMotion
@@ -41,6 +42,22 @@ interface PresetClipResources {
   speechExitTransitions?: Map<string, ResolvedTransitionMotion[]>
 }
 
+interface MotionSpecEntry {
+  id: string
+  path: string
+  spec: VideoSpec
+}
+
+const formatSpec = (spec: VideoSpec): string =>
+  `${spec.width}x${spec.height} ${spec.frameRate}fps ${spec.codec} ${spec.pixelFormat}`
+
+const specsMatch = (a: VideoSpec, b: VideoSpec): boolean =>
+  a.width === b.width &&
+  a.height === b.height &&
+  a.frameRate === b.frameRate &&
+  a.codec === b.codec &&
+  a.pixelFormat === b.pixelFormat
+
 export class ClipPlanner {
   private readonly presetResources: Map<string, PresetClipResources>
 
@@ -57,6 +74,134 @@ export class ClipPlanner {
         },
       ])
     )
+  }
+
+  async validateMotionSpecs(presets: ResolvedPreset[]): Promise<boolean> {
+    const entries: MotionSpecEntry[] = []
+    const seenPaths = new Set<string>()
+
+    const collectMotion = async (id: string, absolutePath: string) => {
+      if (seenPaths.has(absolutePath)) return
+      seenPaths.add(absolutePath)
+      try {
+        const spec = await this.mediaPipeline.getVideoSpec(absolutePath)
+        entries.push({ id, path: absolutePath, spec })
+      } catch (err) {
+        logger.warn({ id, path: absolutePath, err }, 'モーションファイルの仕様を取得できませんでした')
+      }
+    }
+
+    for (const preset of presets) {
+      for (const motion of preset.idleMotions.large) {
+        await collectMotion(motion.id, motion.absolutePath)
+      }
+      for (const motion of preset.idleMotions.small) {
+        await collectMotion(motion.id, motion.absolutePath)
+      }
+      for (const motion of preset.speechMotions.large) {
+        await collectMotion(motion.id, motion.absolutePath)
+      }
+      for (const motion of preset.speechMotions.small) {
+        await collectMotion(motion.id, motion.absolutePath)
+      }
+      if (preset.speechTransitions?.enter) {
+        for (const motion of preset.speechTransitions.enter) {
+          await collectMotion(motion.id, motion.absolutePath)
+        }
+      }
+      if (preset.speechTransitions?.exit) {
+        for (const motion of preset.speechTransitions.exit) {
+          await collectMotion(motion.id, motion.absolutePath)
+        }
+      }
+      for (const action of preset.actions) {
+        await collectMotion(action.id, action.absolutePath)
+      }
+    }
+
+    if (entries.length === 0) {
+      return true
+    }
+
+    const referenceSpec = entries[0].spec
+    const allMatch = entries.every((e) => specsMatch(e.spec, referenceSpec))
+
+    if (!allMatch) {
+      const specGroups = new Map<string, MotionSpecEntry[]>()
+      for (const entry of entries) {
+        const key = formatSpec(entry.spec)
+        if (!specGroups.has(key)) {
+          specGroups.set(key, [])
+        }
+        specGroups.get(key)!.push(entry)
+      }
+
+      // 多数決で基準仕様を決定
+      let majoritySpec: VideoSpec | undefined
+      let majorityKey = ''
+      let majorityCount = 0
+      for (const [key, motions] of specGroups) {
+        if (motions.length > majorityCount) {
+          majorityCount = motions.length
+          majorityKey = key
+          majoritySpec = motions[0].spec
+        }
+      }
+
+      const lines: string[] = [
+        '',
+        '========================================',
+        '⚠️  モーション仕様の不一致を検出',
+        '========================================',
+        '',
+        'モーションファイルの仕様が統一されていません。',
+        'concat時に動画が固まる・乱れるなどの問題が発生する可能性があります。',
+        '',
+        '--- モーション仕様一覧 ---',
+      ]
+
+      for (const [spec, motions] of specGroups) {
+        lines.push('')
+        const isMajority = spec === majorityKey
+        lines.push(`[${spec}]${isMajority ? ' ← 推奨基準 (最多)' : ''}`)
+        for (const motion of motions) {
+          lines.push(`  - ${motion.id}`)
+          lines.push(`    ${motion.path}`)
+        }
+      }
+
+      if (majoritySpec) {
+        const toConvert = entries.filter((e) => !specsMatch(e.spec, majoritySpec!))
+        if (toConvert.length > 0) {
+          const fpsValue = majoritySpec.frameRate.includes('/')
+            ? majoritySpec.frameRate.split('/')[0]
+            : majoritySpec.frameRate
+
+          lines.push('')
+          lines.push('--- 推奨変換コマンド ---')
+          lines.push(`基準仕様: ${majorityKey} (${majorityCount}ファイルが該当)`)
+          lines.push('')
+          lines.push('以下のファイルを変換してください:')
+          lines.push('')
+
+          for (const entry of toConvert) {
+            const outputPath = entry.path.replace(/\.mp4$/, '_converted.mp4')
+            lines.push(
+              `ffmpeg -i "${entry.path}" -vf "scale=${majoritySpec.width}:${majoritySpec.height},fps=${fpsValue}" -c:v libx264 -pix_fmt ${majoritySpec.pixelFormat} -an "${outputPath}"`
+            )
+          }
+        }
+      }
+
+      lines.push('')
+      lines.push('========================================')
+      lines.push('')
+
+      logger.warn(lines.join('\n'))
+      return false
+    }
+
+    return true
   }
 
   async buildSpeechPlan(presetId: string, emotion: string | undefined, durationMs: number): Promise<ClipPlanResult> {
