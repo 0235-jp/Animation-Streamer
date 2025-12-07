@@ -3,6 +3,31 @@ export interface GenerateRequestItem {
   params?: Record<string, unknown>
 }
 
+/**
+ * speak アクションの音声入力オプション
+ */
+export interface AudioInput {
+  /** 音声ファイルパス（サーバーローカル） */
+  path?: string
+  /** Base64エンコード音声データ */
+  base64?: string
+  /** true: STT→TTS, false/未指定: 直接使用 */
+  transcribe?: boolean
+}
+
+/**
+ * speak アクションのパラメータ
+ * text または audio のいずれか一方を指定（排他）
+ */
+export interface SpeakParams {
+  /** テキスト入力 → TTS → 音声 */
+  text?: string
+  /** 音声入力 */
+  audio?: AudioInput
+  /** 感情（モーション選択用） */
+  emotion?: string
+}
+
 export interface GenerateRequestPayload {
   presetId: string
   stream?: boolean

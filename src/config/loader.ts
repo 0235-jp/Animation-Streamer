@@ -52,6 +52,13 @@ export interface VoicevoxVoiceProfile {
   outputStereo?: boolean
 }
 
+export interface ResolvedSTTConfig {
+  baseUrl: string
+  apiKey?: string
+  model: string
+  language: string
+}
+
 export interface ResolvedAudioProfile {
   ttsEngine: 'voicevox'
   voicevoxUrl: string
@@ -77,13 +84,14 @@ export interface ResolvedPaths {
   responsePathBase?: string
 }
 
-export interface ResolvedConfig extends Omit<StreamerConfig, 'presets'> {
+export interface ResolvedConfig extends Omit<StreamerConfig, 'presets' | 'stt'> {
   presets: ResolvedPreset[]
   presetMap: Map<string, ResolvedPreset>
   paths: ResolvedPaths
   rtmp: {
     outputUrl: string
   }
+  stt?: ResolvedSTTConfig
 }
 
 export const loadConfig = async (configPath: string): Promise<ResolvedConfig> => {
@@ -114,6 +122,14 @@ export const loadConfig = async (configPath: string): Promise<ResolvedConfig> =>
   return {
     server: parsed.server,
     rtmp: parsed.rtmp,
+    stt: parsed.stt
+      ? {
+          baseUrl: parsed.stt.baseUrl,
+          apiKey: parsed.stt.apiKey,
+          model: parsed.stt.model,
+          language: parsed.stt.language,
+        }
+      : undefined,
     presets,
     presetMap,
     paths: {

@@ -8,6 +8,7 @@
 - Node.js 20 以上
 - ffmpeg / ffprobe
 - VOICEVOX エンジン (ローカルAPI)
+- (任意) STTサーバー: 音声入力の文字起こし機能を使う場合
 
 ## セットアップ
 ローカルの場合は `config/example.stream-profile.local.json` を、Docker Composeの場合は `config/example.stream-profile.docker.json` を `config/stream-profile.json` にコピーしてください。
@@ -127,6 +128,66 @@ OBS のメディアソースに `rtmp://localhost:1935/live/main` を指定し�
 - 出力ファイルは常にプロジェクト直下の `output/` に保存されます（設定不要）。Docker では `./output:/app/output` をマウントし、`RESPONSE_PATH_BASE` にホスト側 `output` の絶対パスを渡すことで API レスポンスにホスト上のパスを返せます。
 
 `config/example.stream-profile.docker.json` / `config/example.stream-profile.local.json` には Anchor のサンプルが含まれているので、必要に応じて `presets[]` を増やし、`presetId` を切り替えて利用してください。
+
+## 音声入力 (STT)
+
+`speak` アクションではテキストの代わりに音声ファイルを入力できます。
+
+### 直接音声入力（TTS スキップ）
+```bash
+curl -X POST http://localhost:4000/api/generate \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "presetId": "anchor-a",
+    "requests": [
+      { "action": "speak", "params": { "audio": { "path": "/path/to/voice.wav" } } }
+    ]
+  }'
+```
+
+### 音声→文字起こし→TTS（声質変換）
+`transcribe: true` を指定すると、入力音声を STT で文字起こしし、TTS で再合成します。
+```bash
+curl -X POST http://localhost:4000/api/generate \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "presetId": "anchor-a",
+    "requests": [
+      { "action": "speak", "params": { "audio": { "path": "/path/to/voice.wav", "transcribe": true } } }
+    ]
+  }'
+```
+
+### STT サーバーの設定
+音声の文字起こし機能には OpenAI 互換 API をサポートする STT サーバーが必要です。
+
+**推奨: faster-whisper-server**
+```bash
+docker run -d -p 8000:8000 fedirz/faster-whisper-server:latest
+```
+
+設定ファイルの `stt` セクションで接続先を指定します:
+```json
+{
+  "stt": {
+    "baseUrl": "http://localhost:8000/v1",
+    "model": "whisper-1",
+    "language": "ja"
+  }
+}
+```
+
+OpenAI の Whisper API を使う場合:
+```json
+{
+  "stt": {
+    "baseUrl": "https://api.openai.com/v1",
+    "apiKey": "sk-...",
+    "model": "whisper-1",
+    "language": "ja"
+  }
+}
+```
 
 ## モーション動画の仕様統一
 
