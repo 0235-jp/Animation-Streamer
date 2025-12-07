@@ -83,8 +83,8 @@ function createMockPreset(): ResolvedPreset {
   return {
     id: 'test-preset',
     audioProfile: {
+      ttsEngine: 'voicevox',
       voicevoxUrl: 'http://localhost:50021',
-      defaultVoice: { speakerId: 1, emotion: 'neutral' },
       voices: [{ speakerId: 1, emotion: 'neutral' }],
     },
     actionsMap: new Map(),
@@ -113,6 +113,9 @@ function createMockDeps(config: ResolvedConfig) {
     },
     voicevox: {
       synthesize: mocks.synthesize,
+    },
+    sbv2: {
+      synthesize: vi.fn(),
     },
   }
 }

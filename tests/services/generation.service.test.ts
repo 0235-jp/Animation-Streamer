@@ -6,6 +6,7 @@ import { NoAudioTrackError } from '../../src/services/media-pipeline'
 import type { ClipPlanResult, ClipPlanner } from '../../src/services/clip-planner'
 import type { MediaPipeline } from '../../src/services/media-pipeline'
 import type { VoicevoxClient } from '../../src/services/voicevox'
+import type { StyleBertVits2Client } from '../../src/services/style-bert-vits2'
 import type { ResolvedConfig } from '../../src/config/loader'
 import type { ActionResult, GenerateRequestPayload } from '../../src/types/generate'
 import { createResolvedConfig } from '../factories/config'
@@ -66,15 +67,20 @@ const createService = (configOverride?: ResolvedConfig) => {
     synthesize: vi.fn().mockResolvedValue('/tmp/voice.wav'),
   }
 
+  const sbv2 = {
+    synthesize: vi.fn().mockResolvedValue('/tmp/voice.wav'),
+  }
+
   const config = configOverride ?? createResolvedConfig()
   const service = new GenerationService({
     config,
     clipPlanner: clipPlanner as unknown as ClipPlanner,
     mediaPipeline: mediaPipeline as unknown as MediaPipeline,
     voicevox: voicevox as unknown as VoicevoxClient,
+    sbv2: sbv2 as unknown as StyleBertVits2Client,
   })
 
-  return { service, clipPlanner, mediaPipeline, voicevox, config }
+  return { service, clipPlanner, mediaPipeline, voicevox, sbv2, config }
 }
 
 const withPreset = (
@@ -134,22 +140,23 @@ describe('GenerationService', () => {
     )
   })
 
-  it('falls back to default TTS profile when emotion and neutral overrides are unavailable', async () => {
+  it('falls back to neutral voice when requested emotion is unavailable', async () => {
     const customConfig = createResolvedConfig()
     customConfig.presets[0].audioProfile = {
-      ...customConfig.presets[0].audioProfile,
+      ttsEngine: 'voicevox',
+      voicevoxUrl: 'http://127.0.0.1:50021',
       voices: [
+        {
+          emotion: 'neutral',
+          speakerId: 9,
+          volumeScale: 0.7,
+        },
         {
           emotion: 'sad',
           speakerId: 4,
           speedScale: 0.9,
         },
       ],
-      defaultVoice: {
-        emotion: 'neutral',
-        speakerId: 9,
-        volumeScale: 0.7,
-      },
     }
     customConfig.presetMap.set(customConfig.presets[0].id, customConfig.presets[0])
     const { service, voicevox } = createService(customConfig)
@@ -160,12 +167,30 @@ describe('GenerationService', () => {
 
     await service.processBatch(payload)
 
+    // angryがないのでneutralにフォールバック
     expect(voicevox.synthesize).toHaveBeenCalledWith(
       'fallback test',
       expect.any(String),
       expect.objectContaining({ speakerId: 9, volumeScale: 0.7 }),
       expect.objectContaining({ endpoint: 'http://127.0.0.1:50021' })
     )
+  })
+
+  it('throws error when voices is empty for voicevox', async () => {
+    const customConfig = createResolvedConfig()
+    customConfig.presets[0].audioProfile = {
+      ttsEngine: 'voicevox',
+      voicevoxUrl: 'http://127.0.0.1:50021',
+      voices: [],
+    }
+    customConfig.presetMap.set(customConfig.presets[0].id, customConfig.presets[0])
+    const { service } = createService(customConfig)
+    const payload = withPreset({
+      stream: false,
+      requests: [{ action: 'speak', params: { text: 'error test' } }],
+    })
+
+    await expect(service.processBatch(payload)).rejects.toThrow('voicesに少なくとも1つの音声設定が必要です')
   })
 
   it('includes aggregated motionIds in combined result when debug flag is true', async () => {

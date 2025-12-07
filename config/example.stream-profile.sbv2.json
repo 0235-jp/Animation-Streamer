@@ -1,0 +1,77 @@
+{
+  "server": {
+    "port": 4000,
+    "host": "0.0.0.0",
+    "apiKey": "replace-with-your-key"
+  },
+  "rtmp": {
+    "outputUrl": "rtmp://127.0.0.1:1936/live/main"
+  },
+  "presets": [
+    {
+      "id": "anchor-sbv2",
+      "displayName": "Anchor (Style-Bert-VITS2)",
+      "actions": [
+        { "id": "start", "path": "idle_talk.mp4" }
+      ],
+      "idleMotions": {
+        "large": [
+          { "id": "idle-large", "emotion": "neutral", "path": "idle.mp4" }
+        ],
+        "small": [
+          { "id": "idle-small", "emotion": "neutral", "path": "talk_idle.mp4" }
+        ]
+      },
+      "speechMotions": {
+        "large": [
+          { "id": "talk-large", "emotion": "neutral", "path": "talk_large.mp4" },
+          { "id": "talk-happy-large", "emotion": "happy", "path": "talk_large.mp4" }
+        ],
+        "small": [
+          { "id": "talk-small", "emotion": "neutral", "path": "talk_small.mp4" },
+          { "id": "talk-happy-small", "emotion": "happy", "path": "talk_small.mp4" }
+        ]
+      },
+      "speechTransitions": {
+        "enter": [
+          { "id": "transition-enter", "emotion": "neutral", "path": "idle_talk.mp4" },
+          { "id": "transition-enter-happy", "emotion": "happy", "path": "idle_talk.mp4" }
+        ],
+        "exit": [
+          { "id": "transition-exit", "emotion": "neutral", "path": "talk_idle.mp4" },
+          { "id": "transition-exit-happy", "emotion": "happy", "path": "talk_idle.mp4" }
+        ]
+      },
+      "audioProfile": {
+        "ttsEngine": "style-bert-vits2",
+        "sbv2Url": "http://127.0.0.1:5000",
+        "voices": [
+          {
+            "emotion": "neutral",
+            "modelId": 0,
+            "speakerId": 0,
+            "sdpRatio": 0.2,
+            "noise": 0.6,
+            "noisew": 0.8,
+            "length": 1.0,
+            "language": "JP",
+            "style": "Neutral",
+            "styleWeight": 1.0
+          },
+          {
+            "emotion": "happy",
+            "modelId": 0,
+            "speakerId": 0,
+            "sdpRatio": 0.2,
+            "noise": 0.6,
+            "noisew": 0.8,
+            "length": 1.0,
+            "language": "JP",
+            "style": "Happy",
+            "styleWeight": 1.2
+          }
+        ]
+      }
+    }
+  ]
+}
