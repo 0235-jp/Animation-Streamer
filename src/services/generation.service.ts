@@ -1,10 +1,19 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { ResolvedAction, ResolvedPreset, ResolvedConfig, type VoicevoxVoiceProfile } from '../config/loader'
+import {
+  ResolvedAction,
+  ResolvedPreset,
+  ResolvedConfig,
+  type VoicevoxVoiceProfile,
+  type Sbv2VoiceProfile,
+  type ResolvedVoicevoxAudioProfile,
+  type ResolvedSbv2AudioProfile,
+} from '../config/loader'
 import { ClipPlanner } from './clip-planner'
 import { MediaPipeline, type ClipSource, NoAudioTrackError } from './media-pipeline'
 import { VoicevoxClient, type VoicevoxVoiceOptions } from './voicevox'
+import { StyleBertVits2Client, type StyleBertVits2VoiceOptions } from './style-bert-vits2'
 import { STTClient } from './stt'
 import type { ActionResult, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler, AudioInput } from '../types/generate'
 import { logger } from '../utils/logger'
@@ -53,17 +62,20 @@ export class GenerationService {
   private readonly clipPlanner: ClipPlanner
   private readonly mediaPipeline: MediaPipeline
   private readonly voicevox: VoicevoxClient
+  private readonly sbv2: StyleBertVits2Client
 
   constructor(deps: {
     config: ResolvedConfig
     clipPlanner: ClipPlanner
     mediaPipeline: MediaPipeline
     voicevox: VoicevoxClient
+    sbv2: StyleBertVits2Client
   }) {
     this.config = deps.config
     this.clipPlanner = deps.clipPlanner
     this.mediaPipeline = deps.mediaPipeline
     this.voicevox = deps.voicevox
+    this.sbv2 = deps.sbv2
   }
 
   async processBatch(
@@ -460,8 +472,15 @@ export class GenerationService {
     emotion: string
   ): Promise<string> {
     const audioPath = path.join(jobDir, `voice-${requestId}.wav`)
-    const { voice, endpoint } = this.resolveVoiceProfile(preset, emotion)
-    await this.voicevox.synthesize(text, audioPath, voice, { endpoint })
+    const audioProfile = preset.audioProfile
+
+    if (audioProfile.ttsEngine === 'voicevox') {
+      const { voice, endpoint } = this.resolveVoicevoxVoiceProfile(audioProfile, emotion)
+      await this.voicevox.synthesize(text, audioPath, voice, { endpoint })
+    } else {
+      const { voice, endpoint } = this.resolveSbv2VoiceProfile(audioProfile, emotion)
+      await this.sbv2.synthesize(text, audioPath, voice, { endpoint })
+    }
     return audioPath
   }
 
@@ -577,15 +596,15 @@ export class GenerationService {
     }
   }
 
-  private resolveVoiceProfile(
-    preset: ResolvedPreset,
+  private resolveVoicevoxVoiceProfile(
+    audioProfile: ResolvedVoicevoxAudioProfile,
     emotion: string | undefined
   ): { voice: VoicevoxVoiceOptions; endpoint: string } {
     const normalizedEmotion = (emotion ?? 'neutral').trim().toLowerCase()
     let matchingVoice: VoicevoxVoiceProfile | undefined
     let neutralVoice: VoicevoxVoiceProfile | undefined
 
-    for (const voice of preset.audioProfile.voices) {
+    for (const voice of audioProfile.voices) {
       if (voice.emotion === normalizedEmotion) {
         matchingVoice = voice
         break
@@ -595,8 +614,36 @@ export class GenerationService {
       }
     }
 
-    const selected = matchingVoice ?? neutralVoice ?? preset.audioProfile.defaultVoice
-    return { voice: selected, endpoint: preset.audioProfile.voicevoxUrl }
+    const selected = matchingVoice ?? neutralVoice
+    if (!selected) {
+      throw new Error('voicesに少なくとも1つの音声設定が必要です')
+    }
+    return { voice: selected, endpoint: audioProfile.voicevoxUrl }
+  }
+
+  private resolveSbv2VoiceProfile(
+    audioProfile: ResolvedSbv2AudioProfile,
+    emotion: string | undefined
+  ): { voice: StyleBertVits2VoiceOptions; endpoint: string } {
+    const normalizedEmotion = (emotion ?? 'neutral').trim().toLowerCase()
+    let matchingVoice: Sbv2VoiceProfile | undefined
+    let neutralVoice: Sbv2VoiceProfile | undefined
+
+    for (const voice of audioProfile.voices) {
+      if (voice.emotion === normalizedEmotion) {
+        matchingVoice = voice
+        break
+      }
+      if (!neutralVoice && voice.emotion === 'neutral') {
+        neutralVoice = voice
+      }
+    }
+
+    const selected = matchingVoice ?? neutralVoice
+    if (!selected) {
+      throw new Error('voicesに少なくとも1つの音声設定が必要です')
+    }
+    return { voice: selected, endpoint: audioProfile.sbv2Url }
   }
 
   private async buildIdlePlanData(

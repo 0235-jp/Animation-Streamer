@@ -4,6 +4,7 @@ import { loadConfig, type ResolvedConfig } from './config/loader'
 import { MediaPipeline } from './services/media-pipeline'
 import { ClipPlanner } from './services/clip-planner'
 import { VoicevoxClient } from './services/voicevox'
+import { StyleBertVits2Client } from './services/style-bert-vits2'
 import { GenerationService } from './services/generation.service'
 import { createGenerationRouter } from './api/generation.controller'
 import { createDocsRouter } from './api/docs'
@@ -24,11 +25,13 @@ export const createApp = async (options: CreateAppOptions = {}) => {
 
   await clipPlanner.validateMotionSpecs(config.presets)
   const voicevox = new VoicevoxClient()
+  const sbv2 = new StyleBertVits2Client()
   const generationService = new GenerationService({
     config,
     clipPlanner,
     mediaPipeline,
     voicevox,
+    sbv2,
   })
 
   const app = express()

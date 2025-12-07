@@ -50,7 +50,6 @@
       "audioProfile": {
         "ttsEngine": "voicevox",
         "voicevoxUrl": "http://voicevox:50021",
-        "speakerId": 1,
         "voices": [
           {
             "emotion": "neutral",

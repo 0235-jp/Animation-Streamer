@@ -1,7 +1,7 @@
 import path from 'node:path'
 import type {
   ResolvedAction,
-  ResolvedAudioProfile,
+  ResolvedVoicevoxAudioProfile,
   ResolvedPreset,
   ResolvedConfig,
   ResolvedIdleMotion,
@@ -72,19 +72,9 @@ const baseTransitions: ResolvedSpeechTransitions = {
   ],
 }
 
-const baseAudioProfile: ResolvedAudioProfile = {
+const baseAudioProfile: ResolvedVoicevoxAudioProfile = {
   ttsEngine: 'voicevox',
   voicevoxUrl: 'http://127.0.0.1:50021',
-  defaultVoice: {
-    emotion: 'neutral',
-    speakerId: 1,
-    speedScale: 1,
-    pitchScale: 0,
-    intonationScale: 1,
-    volumeScale: 1,
-    outputSamplingRate: 24000,
-    outputStereo: false,
-  },
   voices: [
     {
       emotion: 'neutral',
@@ -121,7 +111,6 @@ const createPreset = (): ResolvedPreset => {
     },
     audioProfile: {
       ...baseAudioProfile,
-      defaultVoice: { ...baseAudioProfile.defaultVoice },
       voices: baseAudioProfile.voices.map((voice) => ({ ...voice })),
     },
   }

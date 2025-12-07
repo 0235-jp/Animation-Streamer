@@ -25,7 +25,8 @@ export const transitionMotionSchema = z.object({
 })
 const transitionCollectionSchema = z.union([transitionMotionSchema, z.array(transitionMotionSchema).min(1)])
 
-const synthesisParamsSchema = z.object({
+// VOICEVOX用パラメータスキーマ
+const voicevoxSynthesisParamsSchema = z.object({
   speedScale: z.number().positive().optional(),
   pitchScale: z.number().optional(),
   intonationScale: z.number().nonnegative().optional(),
@@ -34,17 +35,52 @@ const synthesisParamsSchema = z.object({
   outputStereo: z.boolean().optional(),
 })
 
-const voicevoxVoiceSchema = synthesisParamsSchema.extend({
+const voicevoxVoiceSchema = voicevoxSynthesisParamsSchema.extend({
   emotion: z.string().min(1).default('neutral'),
   speakerId: z.number().int().nonnegative(),
 })
 
-export const audioProfileSchema = synthesisParamsSchema.extend({
+const voicevoxAudioProfileSchema = z.object({
   ttsEngine: z.literal('voicevox'),
   voicevoxUrl: z.string().min(1),
-  speakerId: z.number().int().nonnegative().default(1),
   voices: z.array(voicevoxVoiceSchema).optional(),
 })
+
+// Style-Bert-VITS2用パラメータスキーマ
+const sbv2SynthesisParamsSchema = z.object({
+  sdpRatio: z.number().min(0).max(1).optional(),
+  noise: z.number().min(0).max(1).optional(),
+  noisew: z.number().min(0).max(1).optional(),
+  length: z.number().positive().optional(),
+  language: z.string().optional(),
+  style: z.string().optional(),
+  styleWeight: z.number().optional(),
+  assistText: z.string().optional(),
+  assistTextWeight: z.number().optional(),
+  autoSplit: z.boolean().optional(),
+  splitInterval: z.number().nonnegative().optional(),
+  referenceAudioPath: z.string().optional(),
+})
+
+const sbv2VoiceSchema = sbv2SynthesisParamsSchema.extend({
+  emotion: z.string().min(1).default('neutral'),
+  modelId: z.number().int().nonnegative().optional(),
+  modelName: z.string().optional(),
+  speakerId: z.number().int().nonnegative().optional(),
+  speakerName: z.string().optional(),
+})
+
+const sbv2AudioProfileSchema = z.object({
+  ttsEngine: z.literal('style-bert-vits2'),
+  sbv2Url: z.string().min(1),
+  voices: z.array(sbv2VoiceSchema).optional(),
+})
+
+// 統合audioProfileスキーマ
+export const audioProfileSchema = z.discriminatedUnion('ttsEngine', [
+  voicevoxAudioProfileSchema,
+  sbv2AudioProfileSchema,
+])
 
 // STT設定スキーマ（トップレベル）- OpenAI互換API
 export const sttConfigSchema = z.object({

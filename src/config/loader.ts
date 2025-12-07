@@ -52,6 +52,26 @@ export interface VoicevoxVoiceProfile {
   outputStereo?: boolean
 }
 
+export interface Sbv2VoiceProfile {
+  emotion: string
+  modelId?: number
+  modelName?: string
+  speakerId?: number
+  speakerName?: string
+  sdpRatio?: number
+  noise?: number
+  noisew?: number
+  length?: number
+  language?: string
+  style?: string
+  styleWeight?: number
+  assistText?: string
+  assistTextWeight?: number
+  autoSplit?: boolean
+  splitInterval?: number
+  referenceAudioPath?: string
+}
+
 export interface ResolvedSTTConfig {
   baseUrl: string
   apiKey?: string
@@ -59,12 +79,19 @@ export interface ResolvedSTTConfig {
   language: string
 }
 
-export interface ResolvedAudioProfile {
+export interface ResolvedVoicevoxAudioProfile {
   ttsEngine: 'voicevox'
   voicevoxUrl: string
-  defaultVoice: VoicevoxVoiceProfile
   voices: VoicevoxVoiceProfile[]
 }
+
+export interface ResolvedSbv2AudioProfile {
+  ttsEngine: 'style-bert-vits2'
+  sbv2Url: string
+  voices: Sbv2VoiceProfile[]
+}
+
+export type ResolvedAudioProfile = ResolvedVoicevoxAudioProfile | ResolvedSbv2AudioProfile
 
 export interface ResolvedPreset {
   id: string
@@ -202,24 +229,8 @@ const resolvePreset = (
     : undefined
 
   const normalizeVoiceEmotion = (emotion: string | undefined) => (emotion?.trim().toLowerCase() ?? 'neutral')
-  const normalizeVoice = (voice: VoicevoxVoiceProfile): VoicevoxVoiceProfile => ({
-    ...voice,
-    emotion: normalizeVoiceEmotion(voice.emotion),
-  })
 
-  const defaultVoice = normalizeVoice({
-    emotion: 'neutral',
-    speakerId: preset.audioProfile.speakerId,
-    speedScale: preset.audioProfile.speedScale,
-    pitchScale: preset.audioProfile.pitchScale,
-    intonationScale: preset.audioProfile.intonationScale,
-    volumeScale: preset.audioProfile.volumeScale,
-    outputSamplingRate: preset.audioProfile.outputSamplingRate,
-    outputStereo: preset.audioProfile.outputStereo,
-  })
-
-  const voices = (preset.audioProfile.voices ?? []).map(normalizeVoice)
-
+  const audioProfile = resolveAudioProfile(preset.audioProfile, normalizeVoiceEmotion)
   const actionsMap = new Map(actions.map((action) => [action.id.toLowerCase(), action]))
 
   return {
@@ -230,12 +241,43 @@ const resolvePreset = (
     idleMotions,
     speechMotions,
     speechTransitions,
-    audioProfile: {
-      ttsEngine: preset.audioProfile.ttsEngine,
-      voicevoxUrl: preset.audioProfile.voicevoxUrl,
-      defaultVoice,
+    audioProfile,
+  }
+}
+
+type RawAudioProfile = StreamerConfig['presets'][number]['audioProfile']
+
+const resolveAudioProfile = (
+  rawProfile: RawAudioProfile,
+  normalizeEmotion: (emotion: string | undefined) => string
+): ResolvedAudioProfile => {
+  if (rawProfile.ttsEngine === 'voicevox') {
+    const normalizeVoicevoxVoice = (voice: VoicevoxVoiceProfile): VoicevoxVoiceProfile => ({
+      ...voice,
+      emotion: normalizeEmotion(voice.emotion),
+    })
+
+    const voices = (rawProfile.voices ?? []).map(normalizeVoicevoxVoice)
+
+    return {
+      ttsEngine: 'voicevox',
+      voicevoxUrl: rawProfile.voicevoxUrl,
       voices,
-    },
+    }
+  } else {
+    // style-bert-vits2
+    const normalizeSbv2Voice = (voice: Sbv2VoiceProfile): Sbv2VoiceProfile => ({
+      ...voice,
+      emotion: normalizeEmotion(voice.emotion),
+    })
+
+    const voices = (rawProfile.voices ?? []).map(normalizeSbv2Voice)
+
+    return {
+      ttsEngine: 'style-bert-vits2',
+      sbv2Url: rawProfile.sbv2Url,
+      voices,
+    }
   }
 }
 

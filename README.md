@@ -7,7 +7,9 @@
 ## 必要環境
 - Node.js 20 以上
 - ffmpeg / ffprobe
-- VOICEVOX エンジン (ローカルAPI)
+- TTS エンジン (以下のいずれか):
+  - VOICEVOX エンジン (ローカルAPI)
+  - Style-Bert-VITS2 API サーバー
 - (任意) STTサーバー: 音声入力の文字起こし機能を使う場合
 
 ## セットアップ
@@ -123,7 +125,7 @@ OBS のメディアソースに `rtmp://localhost:1935/live/main` を指定し�
   - actions: プリセット固有のカスタムアクション群（`speak`/`idle` は予約語のため不可）。`id` は `requests[].action` に指定し、`path` は `motions/` からの相対パス（例: `talk_idle.mp4` や `dir_name/talk_idle.mp4`）です。
   - idleMotions / speechMotions: 待機・発話モーションのプール。`large`/`small` と emotion ごとに最適なクリップを選択し、`motionId` で直接指定もできます。
   - speechTransitions (任意): `speak` の前後に自動で差し込む導入/締めモーション。emotion が一致しない場合は `neutral` → その他の順でフォールバックします。
-  - audioProfile: プリセット単位の VOICEVOX 接続設定。`voicevoxUrl` や話者 ID、emotion 別の `voices[]` を定義できます。
+  - audioProfile: プリセット単位の TTS 設定。`ttsEngine` で使用するエンジンを指定し、emotion 別の `voices[]` を定義します（最低1件必須）。
   - モーション動画は `motions/` 以下にまとまっている想定です。設定ファイルからは接頭辞なしの `motions/` 内相対パスで参照し、Docker では `./motions:/app/motions:ro` をマウントして同じパス構成を維持します。
 - 出力ファイルは常にプロジェクト直下の `output/` に保存されます（設定不要）。Docker では `./output:/app/output` をマウントし、`RESPONSE_PATH_BASE` にホスト側 `output` の絶対パスを渡すことで API レスポンスにホスト上のパスを返せます。
 
@@ -187,6 +189,86 @@ OpenAI の Whisper API を使う場合:
     "language": "ja"
   }
 }
+```
+
+## TTS エンジンの設定
+
+`audioProfile` で使用する TTS エンジンを指定します。`voices` 配列には最低1件の設定が必要です。
+
+### VOICEVOX
+
+```json
+{
+  "audioProfile": {
+    "ttsEngine": "voicevox",
+    "voicevoxUrl": "http://127.0.0.1:50021",
+    "voices": [
+      {
+        "emotion": "neutral",
+        "speakerId": 1,
+        "speedScale": 1.1
+      },
+      {
+        "emotion": "happy",
+        "speakerId": 3,
+        "pitchScale": 0.3,
+        "intonationScale": 1.2
+      }
+    ]
+  }
+}
+```
+
+**voices のパラメータ:**
+- `emotion` (必須): 感情ラベル。リクエストの `emotion` と照合
+- `speakerId` (必須): VOICEVOX の話者 ID
+- `speedScale`, `pitchScale`, `intonationScale`, `volumeScale`: 音声調整パラメータ
+- `outputSamplingRate`, `outputStereo`: 出力形式
+
+### Style-Bert-VITS2
+
+```json
+{
+  "audioProfile": {
+    "ttsEngine": "style-bert-vits2",
+    "sbv2Url": "http://127.0.0.1:5000",
+    "voices": [
+      {
+        "emotion": "neutral",
+        "modelId": 0,
+        "speakerId": 0,
+        "style": "Neutral",
+        "styleWeight": 1.0,
+        "sdpRatio": 0.2,
+        "noise": 0.6,
+        "noisew": 0.8,
+        "length": 1.0,
+        "language": "JP"
+      },
+      {
+        "emotion": "happy",
+        "modelId": 0,
+        "speakerId": 0,
+        "style": "Happy",
+        "styleWeight": 1.2
+      }
+    ]
+  }
+}
+```
+
+**voices のパラメータ:**
+- `emotion` (必須): 感情ラベル
+- `modelId` / `modelName`: 使用モデルの指定
+- `speakerId` / `speakerName`: 話者の指定
+- `style`, `styleWeight`: スタイル指定と強度
+- `sdpRatio`, `noise`, `noisew`: 音声のランダム性調整
+- `length`: 話速（1.0 が基準）
+- `language`: 言語（`JP`, `EN`, `ZH` など）
+
+Style-Bert-VITS2 サーバーの起動:
+```bash
+python server_fastapi.py
 ```
 
 ## モーション動画の仕様統一
