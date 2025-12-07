@@ -9,6 +9,14 @@ export interface ClipSource {
   durationMs: number
 }
 
+export interface VideoSpec {
+  width: number
+  height: number
+  frameRate: string
+  codec: string
+  pixelFormat: string
+}
+
 export interface ComposeOptions {
   clips: ClipSource[]
   audioPath?: string
@@ -468,5 +476,36 @@ export class MediaPipeline {
       throw new Error(`ffprobeでメディア長を取得できませんでした: ${filePath}`)
     }
     return value * 1000
+  }
+
+  async getVideoSpec(videoPath: string): Promise<VideoSpec> {
+    const output = await runCommandWithOutput('ffprobe', [
+      '-v',
+      'error',
+      '-select_streams',
+      'v:0',
+      '-show_entries',
+      'stream=width,height,r_frame_rate,codec_name,pix_fmt',
+      '-of',
+      'json',
+      videoPath,
+    ])
+    let data: { streams?: Array<Record<string, unknown>> }
+    try {
+      data = JSON.parse(output)
+    } catch {
+      throw new Error(`ffprobeの出力をパースできませんでした: ${videoPath}`)
+    }
+    const stream = data.streams?.[0]
+    if (!stream) {
+      throw new Error(`動画ストリームが見つかりません: ${videoPath}`)
+    }
+    return {
+      width: stream.width as number,
+      height: stream.height as number,
+      frameRate: stream.r_frame_rate as string,
+      codec: stream.codec_name as string,
+      pixelFormat: stream.pix_fmt as string,
+    }
   }
 }
