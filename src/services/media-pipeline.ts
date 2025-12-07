@@ -490,17 +490,22 @@ export class MediaPipeline {
       'json',
       videoPath,
     ])
-    const data = JSON.parse(output)
+    let data: { streams?: Array<Record<string, unknown>> }
+    try {
+      data = JSON.parse(output)
+    } catch {
+      throw new Error(`ffprobeの出力をパースできませんでした: ${videoPath}`)
+    }
     const stream = data.streams?.[0]
     if (!stream) {
       throw new Error(`動画ストリームが見つかりません: ${videoPath}`)
     }
     return {
-      width: stream.width,
-      height: stream.height,
-      frameRate: stream.r_frame_rate,
-      codec: stream.codec_name,
-      pixelFormat: stream.pix_fmt,
+      width: stream.width as number,
+      height: stream.height as number,
+      frameRate: stream.r_frame_rate as string,
+      codec: stream.codec_name as string,
+      pixelFormat: stream.pix_fmt as string,
     }
   }
 }
