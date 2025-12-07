@@ -302,7 +302,169 @@ animation-streamer/
 - PinoでJSONログを出力。主要イベント: API呼び出し、状態遷移、ffmpeg開始/終了、エラー。
 - 後日、OBSの監視用途にPrometheusエンドポイントを追加可能。
 
-## 11. 未実装項目 / TODO
+## 11. 音声入力機能（Audio Input Support）
+
+### 11.1 概要
+`speak` アクションはテキスト入力に加えて、音声ファイルの直接入力をサポートする。音声入力時は TTS をスキップして直接モーション合成に進むか、STT でテキスト化してから TTS を通すかを選択できる。
+
+### 11.2 パラメータ拡張
+```typescript
+interface SpeakParams {
+  // 入力ソース（どちらか一方を指定）
+  text?: string              // 既存: テキスト → TTS → 音声
+  audio?: {
+    path?: string            // 音声ファイルパス（サーバーローカル）
+    base64?: string          // Base64エンコード音声データ
+    transcribe?: boolean     // true: STT→TTS, false/未指定: 直接使用
+  }
+
+  emotion?: string           // 感情（モーション選択用）
+}
+```
+
+### 11.3 リクエスト例
+```jsonc
+// テキスト入力（既存）
+{
+  "action": "speak",
+  "params": { "text": "こんにちは", "emotion": "happy" }
+}
+
+// 音声ファイル直接使用
+{
+  "action": "speak",
+  "params": {
+    "audio": { "path": "/path/to/voice.wav" },
+    "emotion": "neutral"
+  }
+}
+
+// Base64音声直接使用
+{
+  "action": "speak",
+  "params": {
+    "audio": { "base64": "UklGR..." }
+  }
+}
+
+// 音声→STT→TTS（声質変換）
+{
+  "action": "speak",
+  "params": {
+    "audio": { "path": "/path/to/voice.wav", "transcribe": true },
+    "emotion": "happy"
+  }
+}
+```
+
+### 11.4 処理フロー
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                        入力                                  │
+├─────────────┬─────────────────┬─────────────────────────────┤
+│    text     │  audio (direct) │     audio (transcribe)      │
+└──────┬──────┴────────┬────────┴──────────────┬──────────────┘
+       │               │                       │
+       │               │                  ┌────▼────┐
+       │               │                  │   STT   │
+       │               │                  │(nodejs- │
+       │               │                  │ whisper)│
+       │               │                  └────┬────┘
+       │               │                       │
+       ▼               │                       ▼
+  ┌─────────┐          │                  ┌─────────┐
+  │   TTS   │          │                  │   TTS   │
+  │(VOICEVOX)│         │                  │(VOICEVOX)│
+  └────┬────┘          │                  └────┬────┘
+       │               │                       │
+       ▼               ▼                       ▼
+  ┌─────────────────────────────────────────────────┐
+  │              音声正規化・トリム                   │
+  └─────────────────────┬───────────────────────────┘
+                        │
+                        ▼
+  ┌─────────────────────────────────────────────────┐
+  │           モーション計画・動画合成                │
+  └─────────────────────────────────────────────────┘
+```
+
+### 11.5 STTクライアント（OpenAI互換API）
+- **バックエンド**: OpenAI互換APIをサポートする任意のSTTサーバー
+  - **faster-whisper-server** (推奨): Docker で簡単に起動、高速
+  - **OpenAI Whisper API**: クラウドサービス
+- **特徴**:
+  - OpenAI SDK を使用した統一インターフェース
+  - ローカルサーバーとクラウドサービスを設定で切り替え可能
+  - 日本語対応
+
+```typescript
+// src/services/stt.ts
+import OpenAI from 'openai'
+
+export class STTClient {
+  private client: OpenAI
+  private model: string
+  private language: string
+
+  constructor(options: { baseUrl: string; apiKey?: string; model?: string; language?: string }) {
+    this.client = new OpenAI({
+      baseURL: options.baseUrl,
+      apiKey: options.apiKey ?? 'dummy-key',
+    })
+    this.model = options.model ?? 'whisper-1'
+    this.language = options.language ?? 'ja'
+  }
+
+  async transcribe(audioPath: string): Promise<string> {
+    const audioFile = fs.createReadStream(audioPath)
+    const response = await this.client.audio.transcriptions.create({
+      file: audioFile,
+      model: this.model,
+      language: this.language,
+    })
+    return response.text.trim()
+  }
+}
+```
+
+### 11.6 設定拡張
+STT設定はトップレベルに配置（プリセット共通）:
+```json
+{
+  "server": { ... },
+  "rtmp": { ... },
+  "stt": {
+    "baseUrl": "http://localhost:8000/v1",
+    "model": "whisper-1",
+    "language": "ja"
+  },
+  "presets": [...]
+}
+```
+
+- `stt.baseUrl`: OpenAI互換APIのベースURL（ローカル: `http://localhost:8000/v1`、OpenAI: `https://api.openai.com/v1`）
+- `stt.apiKey`: APIキー（OpenAI使用時は必須、ローカルサーバーは通常不要）
+- `stt.model`: 使用するモデル（`whisper-1` など）
+- `stt.language`: 音声認識言語（デフォルト: `ja`）
+
+### 11.7 バリデーション
+- `text` と `audio` は排他（両方指定は 400 エラー）
+- `audio` 指定時は `path` か `base64` のどちらか一方が必須
+- `audio.transcribe` は `audio` 指定時のみ有効
+- サポートする音声フォーマット: WAV, MP3, OGG, FLAC（ffmpeg/whisper が対応するもの）
+
+### 11.8 実装対象ファイル
+
+| ファイル | 変更内容 |
+|---------|---------|
+| `src/types/generate.ts` | `SpeakParams`, `AudioInput` 型を追加 |
+| `src/api/schema.ts` | speak パラメータのバリデーション追加 |
+| `src/services/generation.service.ts` | `buildSpeakPlan()` で音声入力の分岐処理 |
+| `src/services/stt.ts` | 新規: STTClient クラス |
+| `src/config/schema.ts` | トップレベルに `stt` 設定を追加 |
+| `src/config/loader.ts` | `ResolvedSTTConfig` 型と設定解決ロジック追加 |
+
+## 12. 未実装項目 / TODO
 - `text` / `generate` エンドポイント内部のTTS呼び出し、音声合成、ストリーム割込み／MP4出力処理。
 - 音声/動画素材の正当性チェック、自動ダウンロード機構。
 - 簡易認証(APIキー)とTLS化。

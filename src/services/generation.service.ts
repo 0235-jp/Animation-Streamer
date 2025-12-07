@@ -5,7 +5,8 @@ import { ResolvedAction, ResolvedPreset, ResolvedConfig, type VoicevoxVoiceProfi
 import { ClipPlanner } from './clip-planner'
 import { MediaPipeline, type ClipSource, NoAudioTrackError } from './media-pipeline'
 import { VoicevoxClient, type VoicevoxVoiceOptions } from './voicevox'
-import type { ActionResult, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler } from '../types/generate'
+import { STTClient } from './stt'
+import type { ActionResult, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler, AudioInput } from '../types/generate'
 import { logger } from '../utils/logger'
 
 const DEFAULT_EMOTION = 'neutral'
@@ -353,13 +354,21 @@ export class GenerationService {
     requestId: string
   ): Promise<PlannedAction> {
     const params = item.params ?? {}
-    const text = this.ensureString(params.text, 'text', requestId)
     const emotion = this.ensureOptionalString(params.emotion) ?? DEFAULT_EMOTION
+    const audio = params.audio as AudioInput | undefined
 
-    const audioPath = path.join(jobDir, `voice-${requestId}.wav`)
-    const { voice, endpoint } = this.resolveVoiceProfile(preset, emotion)
-    await this.voicevox.synthesize(text, audioPath, voice, { endpoint })
-    const normalizedAudio = await this.mediaPipeline.normalizeAudio(audioPath, jobDir, `voice-${requestId}`)
+    // 音声ソースの取得（text, audio.path, audio.base64 のいずれか）
+    let rawAudioPath: string
+    if (audio) {
+      rawAudioPath = await this.resolveAudioInput(audio, preset, jobDir, requestId, emotion)
+    } else {
+      // 既存: テキスト → TTS
+      const text = this.ensureString(params.text, 'text', requestId)
+      rawAudioPath = await this.synthesizeFromText(text, preset, jobDir, requestId, emotion)
+    }
+
+    // 以降は共通処理: 正規化 → トリム → モーション計画
+    const normalizedAudio = await this.mediaPipeline.normalizeAudio(rawAudioPath, jobDir, `voice-${requestId}`)
     const trimmedAudio = await this.mediaPipeline.trimAudioSilence(normalizedAudio, jobDir, `voice-${requestId}-trim`)
     const trimmedDuration = await this.mediaPipeline.getAudioDurationMs(trimmedAudio)
     const useTrimmedAudio = trimmedDuration > 0
@@ -405,6 +414,112 @@ export class GenerationService {
       durationMs,
       audioPath: finalAudioPath,
     }
+  }
+
+  /**
+   * 音声入力を解決する（直接使用 or STT→TTS）
+   */
+  private async resolveAudioInput(
+    audio: AudioInput,
+    preset: ResolvedPreset,
+    jobDir: string,
+    requestId: string,
+    emotion: string
+  ): Promise<string> {
+    // 音声ファイルパスを取得
+    let audioFilePath: string
+    if (audio.base64) {
+      // Base64 → ファイルに保存
+      audioFilePath = await this.saveBase64Audio(audio.base64, jobDir, requestId)
+    } else if (audio.path) {
+      // 外部ファイルをコピー
+      audioFilePath = await this.copyExternalAudio(audio.path, jobDir, requestId)
+    } else {
+      throw new ActionProcessingError('audio には path または base64 のいずれかを指定してください', requestId)
+    }
+
+    // transcribe=true の場合は STT → TTS
+    if (audio.transcribe) {
+      const text = await this.transcribeAudio(audioFilePath, requestId)
+      logger.info({ requestId, textLength: text.length }, 'Audio transcribed, synthesizing with TTS')
+      return this.synthesizeFromText(text, preset, jobDir, requestId, emotion)
+    }
+
+    // 直接使用
+    return audioFilePath
+  }
+
+  /**
+   * テキストから音声を合成する
+   */
+  private async synthesizeFromText(
+    text: string,
+    preset: ResolvedPreset,
+    jobDir: string,
+    requestId: string,
+    emotion: string
+  ): Promise<string> {
+    const audioPath = path.join(jobDir, `voice-${requestId}.wav`)
+    const { voice, endpoint } = this.resolveVoiceProfile(preset, emotion)
+    await this.voicevox.synthesize(text, audioPath, voice, { endpoint })
+    return audioPath
+  }
+
+  /**
+   * Base64エンコード音声をファイルに保存
+   */
+  private async saveBase64Audio(base64Data: string, jobDir: string, requestId: string): Promise<string> {
+    const audioPath = path.join(jobDir, `audio-input-${requestId}.wav`)
+    const buffer = Buffer.from(base64Data, 'base64')
+    await fs.writeFile(audioPath, buffer)
+    logger.info({ requestId, size: buffer.length }, 'Saved base64 audio to file')
+    return audioPath
+  }
+
+  /**
+   * 外部音声ファイルをジョブディレクトリにコピー
+   */
+  private async copyExternalAudio(externalPath: string, jobDir: string, requestId: string): Promise<string> {
+    try {
+      await fs.access(externalPath)
+    } catch {
+      throw new ActionProcessingError(
+        `指定された音声ファイルが見つかりません: ${externalPath}`,
+        requestId
+      )
+    }
+    const ext = path.extname(externalPath) || '.wav'
+    const audioPath = path.join(jobDir, `audio-input-${requestId}${ext}`)
+    await fs.copyFile(externalPath, audioPath)
+    logger.info({ requestId, source: externalPath }, 'Copied external audio file')
+    return audioPath
+  }
+
+  /**
+   * 音声をテキストに変換（STT）
+   */
+  private async transcribeAudio(audioPath: string, requestId: string): Promise<string> {
+    const sttConfig = this.config.stt
+    if (!sttConfig) {
+      throw new ActionProcessingError(
+        'STT を使用するには設定ファイルの stt セクションを設定してください',
+        requestId
+      )
+    }
+
+    const sttClient = new STTClient({
+      baseUrl: sttConfig.baseUrl,
+      apiKey: sttConfig.apiKey,
+      model: sttConfig.model,
+      language: sttConfig.language,
+    })
+    const text = await sttClient.transcribe(audioPath)
+
+    if (!text.trim()) {
+      throw new ActionProcessingError('音声からテキストを認識できませんでした', requestId)
+    }
+
+    return text
   }
 
   private async planIdleAction(

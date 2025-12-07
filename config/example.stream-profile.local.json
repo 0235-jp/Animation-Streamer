@@ -7,6 +7,11 @@
   "rtmp": {
     "outputUrl": "rtmp://127.0.0.1:1936/live/main"
   },
+  "stt": {
+    "baseUrl": "http://localhost:8000/v1",
+    "model": "whisper-1",
+    "language": "ja"
+  },
   "presets": [
     {
       "id": "anchor-a",
