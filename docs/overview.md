@@ -96,9 +96,46 @@ SPEAK --stop--> STOPPED
 ```
 - `requests` は記述順に処理され、レスポンスの `id` はサーバーが `1, 2, ...` と自動採番する。
 - `presetId` はリクエスト直下で必須指定（バッチ内の全アクションが同じキャラクターを参照する）。未指定の場合は400。
-- `speak` は `text` 必須／`emotion` 任意。emotionに合うモーションが無い場合は `neutral` プールを自動選択。
+- `speak` は `text` または `audio` のいずれかを指定（排他）。`emotion` は任意。emotionに合うモーションが無い場合は `neutral` プールを自動選択。
 - `idle` は `durationMs` 必須。`motionId` を指定するとそのキャラクター内でそのモーションだけでタイムラインを組む。
 - 任意 `action` の値は選択されたキャラクターの `actions[].id` のいずれかに一致している必要がある（`speak`/`idle` は登録不可）。
+
+## speakアクションの入力形式
+`speak` アクションはテキスト入力と音声入力の両方をサポートする。
+
+### テキスト入力（既存）
+```jsonc
+{ "action": "speak", "params": { "text": "こんにちは", "emotion": "happy" } }
+```
+
+### 音声入力（直接使用）
+音声ファイルをそのままモーション合成に使用する。TTS をスキップするため高速。
+```jsonc
+// ファイルパス指定
+{ "action": "speak", "params": { "audio": { "path": "/path/to/voice.wav" } } }
+
+// Base64エンコード
+{ "action": "speak", "params": { "audio": { "base64": "UklGR..." } } }
+```
+
+### 音声入力（STT→TTS）
+入力音声を STT でテキスト化し、TTS で再合成する。声質変換的な用途に使用。
+```jsonc
+{
+  "action": "speak",
+  "params": {
+    "audio": { "path": "/path/to/voice.wav", "transcribe": true },
+    "emotion": "happy"
+  }
+}
+```
+
+### 処理フロー
+```
+text入力        → TTS(VOICEVOX) → 音声正規化 → モーション合成
+audio入力       → 音声正規化 → モーション合成
+audio+transcribe → STT(whisper) → TTS(VOICEVOX) → 音声正規化 → モーション合成
+```
 
 ## 将来拡張の指針
 - `text` エンドポイント：TTS連携、音声と発話モーションの合成、待機への復帰を順次処理する。

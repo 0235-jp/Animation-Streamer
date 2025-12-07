@@ -52,11 +52,17 @@ export interface VoicevoxVoiceProfile {
   outputStereo?: boolean
 }
 
+export interface ResolvedSTTProfile {
+  engine: 'whisper'
+  whisperModel: string
+}
+
 export interface ResolvedAudioProfile {
   ttsEngine: 'voicevox'
   voicevoxUrl: string
   defaultVoice: VoicevoxVoiceProfile
   voices: VoicevoxVoiceProfile[]
+  stt?: ResolvedSTTProfile
 }
 
 export interface ResolvedPreset {
@@ -219,6 +225,12 @@ const resolvePreset = (
       voicevoxUrl: preset.audioProfile.voicevoxUrl,
       defaultVoice,
       voices,
+      stt: preset.audioProfile.sttEngine
+        ? {
+            engine: preset.audioProfile.sttEngine,
+            whisperModel: preset.audioProfile.whisperModel ?? 'base',
+          }
+        : undefined,
     },
   }
 }
