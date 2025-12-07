@@ -35,9 +35,8 @@ export class STTClient {
   async transcribe(audioPath: string): Promise<string> {
     logger.info({ audioPath, model: this.model }, 'Starting STT transcription')
 
+    const audioFile = fs.createReadStream(audioPath)
     try {
-      const audioFile = fs.createReadStream(audioPath)
-
       const response = await this.client.audio.transcriptions.create({
         file: audioFile,
         model: this.model,
@@ -58,6 +57,8 @@ export class STTClient {
       throw new Error(
         `音声認識に失敗しました: ${error instanceof Error ? error.message : 'Unknown error'}`
       )
+    } finally {
+      audioFile.destroy()
     }
   }
 }
