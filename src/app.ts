@@ -12,6 +12,7 @@ import { createDocsRouter } from './api/docs'
 import { StreamService } from './services/stream.service'
 import { createStreamRouter } from './api/stream.controller'
 import { RtmpServer } from './infra/rtmp-server'
+import { logger } from './utils/logger'
 
 export interface CreateAppOptions {
   configPath?: string
@@ -29,8 +30,12 @@ export const createApp = async (options: CreateAppOptions = {}) => {
   const sbv2 = new StyleBertVits2Client()
   const cacheService = new CacheService(config.paths.outputDir)
 
-  // 起動時にログファイルを実態と同期
-  await cacheService.syncLogWithFiles()
+  // 起動時にログファイルを実態と同期（失敗しても起動は継続）
+  try {
+    await cacheService.syncLogWithFiles()
+  } catch (err) {
+    logger.warn({ err }, 'Failed to sync output log; continuing startup')
+  }
 
   const generationService = new GenerationService({
     config,
