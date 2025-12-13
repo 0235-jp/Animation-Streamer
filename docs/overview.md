@@ -141,6 +141,7 @@ audio+transcribe → STT(whisper) → TTS(VOICEVOX) → 音声正規化 → モ�
 `/api/generate` で生成した動画をキャッシュし、同一設定・同一テキストのリクエスト時に再生成をスキップして既存ファイルを返す機能。
 
 ### 対象範囲
+
 | API | キャッシュ対象 |
 |-----|---------------|
 | `/api/generate` | speak/idle/結合動画 |
@@ -151,11 +152,11 @@ audio+transcribe → STT(whisper) → TTS(VOICEVOX) → 音声正規化 → モ�
 
 ### キャッシュ制御
 - リクエストに `cache: boolean` パラメータを追加（デフォルト: `false`）。
-- `false`: キャッシュチェックせず常に生成（ファイル名はハッシュ値、ログは追記）。
+- `false`: キャッシュチェックせず常に生成（ファイル名はハッシュ値+UUID、ログは追記）。
 - `true`: キャッシュがあればそれを返し、なければ生成。
 
 ### ファイル名とログ
-- `/api/generate` のファイル名は常にハッシュ値（設定+テキストから算出）。
+- `/api/generate` のファイル名はキャッシュ設定に依存（`cache: true` ならハッシュ値、`false` ならハッシュ値+UUID）。
 - 生成のたびに `output/output.jsonl` へ追記（JSONL形式）。
 - 起動時にログファイルを実態と同期（存在しないファイルのエントリを削除）。
 

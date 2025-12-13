@@ -496,16 +496,15 @@ interface GenerateRequestPayload {
 }
 ```
 
-- `cache: false`（デフォルト）: キャッシュチェックせず常に生成。ファイル名はハッシュ値、ログは追記。
+- `cache: false`（デフォルト）: キャッシュチェックせず常に生成。ファイル名はハッシュ値+UUID、ログは追記。
 - `cache: true`: キャッシュがあればそれを返し、なければ生成してキャッシュ。
 
 ### 12.4 ファイル名
 
-`/api/generate` のファイル名は `cache` の値に関係なく常にハッシュ値を使用:
+`/api/generate` のファイル名は `cache` の値によって変わります:
 
-```
-output/{hash}.mp4
-```
+- `cache: true` の場合: `output/{hash}.mp4`
+- `cache: false` の場合: `output/{hash}-{uuid}.mp4`
 
 ハッシュはキャッシュキー（後述）をSHA-256でハッシュ化して使用。
 
