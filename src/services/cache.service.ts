@@ -105,7 +105,12 @@ export class CacheService {
       await fs.access(cachePath)
       logger.info({ hash, cachePath }, 'Cache hit')
       return cachePath
-    } catch {
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException | undefined)?.code
+      if (code && code !== 'ENOENT') {
+        logger.warn({ err, hash, cachePath }, 'Cache check failed')
+        throw err
+      }
       return null
     }
   }
