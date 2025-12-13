@@ -464,7 +464,180 @@ STT設定はトップレベルに配置（プリセット共通）:
 | `src/config/schema.ts` | トップレベルに `stt` 設定を追加 |
 | `src/config/loader.ts` | `ResolvedSTTConfig` 型と設定解決ロジック追加 |
 
-## 12. 未実装項目 / TODO
+## 12. 動画キャッシュ機能（Video Cache）
+
+### 12.1 概要
+`/api/generate` で生成した動画をキャッシュし、同一設定・同一テキストのリクエスト時に再生成をスキップして既存ファイルを返す機能。ローカルPC環境での利用を想定し、キャッシュの削除はユーザーが手動で行う。
+
+### 12.2 対象範囲
+
+| API | アクション | キャッシュ |
+|-----|-----------|----------|
+| `/api/generate` | speak | 対象 |
+| `/api/generate` | idle | 対象 |
+| `/api/generate` | 結合動画（`stream: false`） | 対象 |
+| `/api/generate` | custom | 非対象 |
+| `/api/stream/*` | 全て | 非対象 |
+
+- custom アクションは事前登録済み動画を再生するだけのためキャッシュ不要。
+- **`/api/stream` のファイル名は従来通りランダムUUID**を使用し、キャッシュ機能の影響を受けない（`output/stream/` 内のファイルは再生後自動削除される既存仕様のまま）。
+
+### 12.3 リクエストパラメータ
+
+`GenerateRequestPayload` に `cache` パラメータを追加:
+
+```typescript
+interface GenerateRequestPayload {
+  presetId: string
+  stream?: boolean
+  cache?: boolean
+  requests: GenerateRequestItem[]
+  debug?: boolean
+}
+```
+
+- `cache: false`（デフォルト）: キャッシュチェックせず常に生成。ファイル名はハッシュ値+UUID、ログは追記。
+- `cache: true`: キャッシュがあればそれを返し、なければ生成してキャッシュ。
+
+### 12.4 ファイル名
+
+`/api/generate` のファイル名は `cache` の値によって変わります:
+
+- `cache: true` の場合: `output/{hash}.mp4`
+- `cache: false` の場合: `output/{hash}-{uuid}.mp4`
+
+ハッシュはキャッシュキー（後述）をSHA-256でハッシュ化して使用。
+
+### 12.5 キャッシュキー（ハッシュの元）
+
+アクション種別・入力種別ごとにキャッシュキーを構成:
+
+**speak アクション（text入力）:**
+```json
+{
+  "type": "speak",
+  "presetId": "anchor-a",
+  "inputType": "text",
+  "text": "こんにちは",
+  "ttsEngine": "voicevox",
+  "ttsSettings": { "speakerId": 1, "speedScale": 1.1 },
+  "emotion": "neutral"
+}
+```
+
+**speak アクション（audio直接入力）:**
+```json
+{
+  "type": "speak",
+  "presetId": "anchor-a",
+  "inputType": "audio",
+  "audioHash": "e3b0c44298fc1c149afbf4c8996fb924...",  // 入力音声ファイルのSHA-256ハッシュ
+  "emotion": "neutral"
+}
+```
+
+**speak アクション（audio+transcribe入力）:**
+```json
+{
+  "type": "speak",
+  "presetId": "anchor-a",
+  "inputType": "audio_transcribe",
+  "audioHash": "e3b0c44298fc1c149afbf4c8996fb924...",  // 入力音声ファイルのSHA-256ハッシュ
+  "ttsEngine": "voicevox",
+  "ttsSettings": { "speakerId": 1, "speedScale": 1.1 },
+  "emotion": "neutral"
+}
+```
+
+音声入力の場合、`audio.path` または `audio.base64` のどちらでも、音声データの内容をSHA-256でハッシュ化してキャッシュキーに含める。これにより同じ音声ファイルが入力された場合にキャッシュヒットする。
+
+**idle アクション:**
+```json
+{
+  "type": "idle",
+  "presetId": "anchor-a",
+  "durationMs": 2000,
+  "motionId": "idle-a-large",  // 指定時のみ
+  "emotion": "neutral"
+}
+```
+
+**結合動画（`stream: false`）:**
+```json
+{
+  "type": "combined",
+  "presetId": "anchor-a",
+  "actionHashes": ["hash1", "hash2", "hash3"]
+}
+```
+
+### 12.6 出力ログ
+
+生成のたびに `output/output.jsonl` へ追記（JSONL形式: 1行1JSON）:
+
+```jsonl
+{"file":"a1b2c3d4e5f6.mp4","type":"speak","inputType":"text","preset":"default","tts":"voicevox","speakerId":1,"emotion":"neutral","text":"こんにちは","createdAt":"2024-01-01T00:00:00Z"}
+{"file":"b2c3d4e5f6a7.mp4","type":"speak","inputType":"audio","preset":"default","emotion":"neutral","audioHash":"e3b0c442...","createdAt":"2024-01-01T00:00:01Z"}
+{"file":"c3d4e5f6a7b8.mp4","type":"speak","inputType":"audio_transcribe","preset":"default","tts":"voicevox","speakerId":1,"emotion":"happy","audioHash":"a1b2c3d4...","text":"こんにちは","createdAt":"2024-01-01T00:00:02Z"}
+{"file":"d4e5f6a7b8c9.mp4","type":"idle","preset":"default","durationMs":2000,"emotion":"neutral","createdAt":"2024-01-01T00:00:03Z"}
+{"file":"abc123def456.mp4","type":"combined","preset":"default","actions":[{"type":"speak","inputType":"text","text":"こんにちは"},{"type":"idle","durationMs":2000}],"createdAt":"2024-01-01T00:00:04Z"}
+```
+
+### 12.7 キャッシュフロー
+
+```text
+リクエスト受信
+    │
+    ▼
+キャッシュキー生成（設定+テキスト → ハッシュ）
+    │
+    ▼
+cache = true ?
+    │
+    ├─ No ──▶ 生成 ──▶ {hash}-{uuid}.mp4 保存 ──▶ ログ追記 ──▶ レスポンス
+    │
+    └─ Yes ─▶ output/{hash}.mp4 存在する？
+                  │
+                  ├─ Yes ──▶ そのパスを返す（生成スキップ）
+                  │
+                  └─ No ───▶ 生成 ──▶ {hash}.mp4 保存 ──▶ ログ追記 ──▶ レスポンス
+```
+
+### 12.8 起動時のログ同期
+
+サーバー起動時に `output/output.jsonl` を読み込み、実際のファイル存在と照合:
+
+1. ログファイルを1行ずつパース
+2. 各エントリの `file` が `output/` に存在するか確認
+3. 存在しないエントリを除外した新しいログファイルを書き出し
+
+これによりユーザーが手動でファイルを削除した場合もログが実態と同期される。
+
+### 12.9 並行リクエストの扱い
+
+同じキャッシュキーで同時にリクエストが来た場合:
+
+- 両方とも生成を実行（ロック機構は設けない）
+- 同じファイル名なので後から書き込んだ方が上書き
+- 実用上の問題はない（同一内容のファイルが生成されるため）
+
+### 12.10 実装対象ファイル
+
+| ファイル | 変更内容 |
+|---------|---------|
+| `src/types/generate.ts` | `cache` パラメータ追加 |
+| `src/api/schema.ts` | `cache` バリデーション追加 |
+| `src/services/generation.service.ts` | キャッシュキー生成、キャッシュチェック、ログ追記処理 |
+| `src/services/cache.service.ts` | 新規: キャッシュキー生成、ログ管理、起動時同期 |
+| `src/app.ts` | 起動時のログ同期処理呼び出し |
+
+### 12.11 注意事項
+
+- **モーション選択のランダム性**: speak/idle のモーション選択には `Math.random()` が使われている。キャッシュ有効時は最初に生成された動画が返されるため同じ見た目になるが、キャッシュ無効時は毎回異なる動画が生成される。
+- **設定変更時**: preset の設定（モーションファイルなど）を変更した場合、古いキャッシュが使われる可能性がある。ユーザーが適宜キャッシュを削除する運用を想定。
+- **`/api/stream` への影響なし**: `/api/stream` 経由のファイル生成（`forStreamPipeline: true`）はキャッシュ機能の対象外。ファイル名も従来通りランダムUUIDを使用し、`output/stream/` への保存と自動削除の仕様は変更しない。
+
+## 13. 未実装項目 / TODO
 - `text` / `generate` エンドポイント内部のTTS呼び出し、音声合成、ストリーム割込み／MP4出力処理。
 - 音声/動画素材の正当性チェック、自動ダウンロード機構。
 - 簡易認証(APIキー)とTLS化。

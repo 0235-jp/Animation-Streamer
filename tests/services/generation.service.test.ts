@@ -7,6 +7,7 @@ import type { ClipPlanResult, ClipPlanner } from '../../src/services/clip-planne
 import type { MediaPipeline } from '../../src/services/media-pipeline'
 import type { VoicevoxClient } from '../../src/services/voicevox'
 import type { StyleBertVits2Client } from '../../src/services/style-bert-vits2'
+import type { CacheService } from '../../src/services/cache.service'
 import type { ResolvedConfig } from '../../src/config/loader'
 import type { ActionResult, GenerateRequestPayload } from '../../src/types/generate'
 import { createResolvedConfig } from '../factories/config'
@@ -71,6 +72,18 @@ const createService = (configOverride?: ResolvedConfig) => {
     synthesize: vi.fn().mockResolvedValue('/tmp/voice.wav'),
   }
 
+  const cacheService = {
+    generateCacheKey: vi.fn().mockReturnValue('test-cache-hash'),
+    computeFileHash: vi.fn().mockResolvedValue('test-file-hash'),
+    computeBufferHash: vi.fn().mockResolvedValue('test-buffer-hash'),
+    checkCache: vi.fn().mockResolvedValue(null),
+    appendLog: vi.fn().mockResolvedValue(undefined),
+    getCachePath: vi.fn().mockReturnValue('/tmp/output/test-cache-hash.mp4'),
+    createSpeakLogEntry: vi.fn().mockReturnValue({ file: 'test.mp4', type: 'speak', preset: 'anchor-a', createdAt: '2024-01-01T00:00:00Z' }),
+    createIdleLogEntry: vi.fn().mockReturnValue({ file: 'test.mp4', type: 'idle', preset: 'anchor-a', createdAt: '2024-01-01T00:00:00Z' }),
+    createCombinedLogEntry: vi.fn().mockReturnValue({ file: 'test.mp4', type: 'combined', preset: 'anchor-a', createdAt: '2024-01-01T00:00:00Z' }),
+  }
+
   const config = configOverride ?? createResolvedConfig()
   const service = new GenerationService({
     config,
@@ -78,9 +91,10 @@ const createService = (configOverride?: ResolvedConfig) => {
     mediaPipeline: mediaPipeline as unknown as MediaPipeline,
     voicevox: voicevox as unknown as VoicevoxClient,
     sbv2: sbv2 as unknown as StyleBertVits2Client,
+    cacheService: cacheService as unknown as CacheService,
   })
 
-  return { service, clipPlanner, mediaPipeline, voicevox, sbv2, config }
+  return { service, clipPlanner, mediaPipeline, voicevox, sbv2, cacheService, config }
 }
 
 const withPreset = (
@@ -258,7 +272,8 @@ describe('GenerationService', () => {
     const result = await service.processBatch(payload)
 
     expect(result.kind).toBe('combined')
-    expect(result.result.outputPath).toBe(path.join('/host/output', 'batch-test-uuid.mp4'))
+    // cache未指定（デフォルトfalse）の場合、ファイル名はハッシュ+UUID
+    expect(result.result.outputPath).toBe(path.join('/host/output', 'test-cache-hash-test-uuid.mp4'))
   })
 
   it('pads speech audio with silent segments when transitions are present', async () => {
@@ -464,7 +479,8 @@ describe('GenerationService', () => {
 
       expect(result.kind).toBe('stream')
       // forStreamPipeline=falseの場合、outputに出力し、responsePathBaseで変換されたパスを返す
-      expect(result.results[0].outputPath).toBe(path.join('/host/output', 'idle-1-test-uuid.mp4'))
+      // cache未指定（デフォルトfalse）の場合、ファイル名はハッシュ+UUID
+      expect(result.results[0].outputPath).toBe(path.join('/host/output', 'test-cache-hash-test-uuid.mp4'))
     })
 
     it('defaults forStreamPipeline to false when not specified', async () => {
@@ -488,7 +504,8 @@ describe('GenerationService', () => {
 
       expect(result.kind).toBe('stream')
       // デフォルトはfalseなのでresponsePathBaseで変換されたパスを返す
-      expect(result.results[0].outputPath).toBe(path.join('/host/output', 'idle-1-test-uuid.mp4'))
+      // cache未指定（デフォルトfalse）の場合、ファイル名はハッシュ+UUID
+      expect(result.results[0].outputPath).toBe(path.join('/host/output', 'test-cache-hash-test-uuid.mp4'))
     })
   })
 
@@ -537,6 +554,268 @@ describe('GenerationService', () => {
       audioPath: expect.any(String),
       durationMs: 2000,
       jobDir: '/tmp/job',
+    })
+  })
+
+  describe('cache functionality', () => {
+    it('returns cached file when cache=true and cache exists for speak action', async () => {
+      const { service, cacheService, mediaPipeline, voicevox } = createService()
+      cacheService.checkCache.mockResolvedValueOnce('/tmp/output/cached-hash.mp4')
+      mediaPipeline.getVideoDurationMs.mockResolvedValueOnce(1500)
+
+      const payload = withPreset({
+        stream: true,
+        cache: true,
+        requests: [{ action: 'speak', params: { text: 'cached text' } }],
+      })
+
+      const result = (await service.processBatch(payload)) as { kind: 'stream'; results: ActionResult[] }
+
+      expect(result.kind).toBe('stream')
+      expect(result.results[0].outputPath).toBe('/tmp/output/cached-hash.mp4')
+      expect(result.results[0].durationMs).toBe(1500)
+      expect(voicevox.synthesize).not.toHaveBeenCalled()
+      expect(mediaPipeline.compose).not.toHaveBeenCalled()
+    })
+
+    it('returns cached file when cache=true and cache exists for idle action', async () => {
+      const { service, cacheService, mediaPipeline, clipPlanner } = createService()
+      cacheService.checkCache.mockResolvedValueOnce('/tmp/output/cached-idle.mp4')
+      mediaPipeline.getVideoDurationMs.mockResolvedValueOnce(500)
+
+      const payload = withPreset({
+        stream: true,
+        cache: true,
+        requests: [{ action: 'idle', params: { durationMs: 500 } }],
+      })
+
+      const result = (await service.processBatch(payload)) as { kind: 'stream'; results: ActionResult[] }
+
+      expect(result.kind).toBe('stream')
+      expect(result.results[0].outputPath).toBe('/tmp/output/cached-idle.mp4')
+      expect(result.results[0].durationMs).toBe(500)
+      expect(clipPlanner.buildIdlePlan).not.toHaveBeenCalled()
+      expect(mediaPipeline.compose).not.toHaveBeenCalled()
+    })
+
+    it('generates new file when cache=true but cache miss for speak action', async () => {
+      const { service, cacheService, voicevox, mediaPipeline } = createService()
+      cacheService.checkCache.mockResolvedValue(null)
+
+      const payload = withPreset({
+        stream: true,
+        cache: true,
+        requests: [{ action: 'speak', params: { text: 'new text' } }],
+      })
+
+      const result = (await service.processBatch(payload)) as { kind: 'stream'; results: ActionResult[] }
+
+      expect(result.kind).toBe('stream')
+      expect(cacheService.checkCache).toHaveBeenCalled()
+      expect(voicevox.synthesize).toHaveBeenCalled()
+      expect(mediaPipeline.compose).toHaveBeenCalled()
+      expect(cacheService.appendLog).toHaveBeenCalled()
+    })
+
+    it('skips cache check when cache=false', async () => {
+      const { service, cacheService, voicevox } = createService()
+
+      const payload = withPreset({
+        stream: true,
+        cache: false,
+        requests: [{ action: 'speak', params: { text: 'no cache' } }],
+      })
+
+      await service.processBatch(payload)
+
+      expect(cacheService.checkCache).not.toHaveBeenCalled()
+      expect(voicevox.synthesize).toHaveBeenCalled()
+      expect(cacheService.appendLog).toHaveBeenCalled()
+    })
+
+    it('skips cache check when cache is not specified', async () => {
+      const { service, cacheService, voicevox } = createService()
+
+      const payload = withPreset({
+        stream: true,
+        requests: [{ action: 'speak', params: { text: 'default' } }],
+      })
+
+      await service.processBatch(payload)
+
+      expect(cacheService.checkCache).not.toHaveBeenCalled()
+      expect(voicevox.synthesize).toHaveBeenCalled()
+    })
+
+    it('always appends to log regardless of cache flag', async () => {
+      const { service, cacheService } = createService()
+
+      const payload = withPreset({
+        stream: true,
+        cache: false,
+        requests: [{ action: 'speak', params: { text: 'log test' } }],
+      })
+
+      await service.processBatch(payload)
+
+      expect(cacheService.appendLog).toHaveBeenCalled()
+    })
+
+    it('uses UUID filename and skips cache for forStreamPipeline=true', async () => {
+      const { service, cacheService, mediaPipeline } = createService()
+
+      const payload = withPreset({
+        stream: true,
+        forStreamPipeline: true,
+        cache: true,
+        requests: [{ action: 'speak', params: { text: 'stream pipeline' } }],
+      })
+
+      const result = (await service.processBatch(payload)) as { kind: 'stream'; results: ActionResult[] }
+
+      expect(cacheService.checkCache).not.toHaveBeenCalled()
+      expect(cacheService.appendLog).not.toHaveBeenCalled()
+      expect(result.results[0].outputPath).toContain('speak-1-test-uuid.mp4')
+    })
+
+    it('generates cache key with text for text input', async () => {
+      const { service, cacheService } = createService()
+
+      const payload = withPreset({
+        stream: true,
+        requests: [{ action: 'speak', params: { text: 'hello world' } }],
+      })
+
+      await service.processBatch(payload)
+
+      expect(cacheService.generateCacheKey).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'speak',
+          inputType: 'text',
+          text: 'hello world',
+        })
+      )
+    })
+
+    it('includes emotion in cache key', async () => {
+      const { service, cacheService } = createService()
+
+      const payload = withPreset({
+        stream: true,
+        requests: [{ action: 'speak', params: { text: 'emotional', emotion: 'happy' } }],
+      })
+
+      await service.processBatch(payload)
+
+      expect(cacheService.generateCacheKey).toHaveBeenCalledWith(
+        expect.objectContaining({
+          emotion: 'happy',
+        })
+      )
+    })
+
+    it('includes motionId in idle cache key when specified', async () => {
+      const { service, cacheService } = createService()
+
+      const payload = withPreset({
+        stream: true,
+        requests: [{ action: 'idle', params: { durationMs: 1000, motionId: 'custom-motion' } }],
+      })
+
+      await service.processBatch(payload)
+
+      expect(cacheService.generateCacheKey).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'idle',
+          durationMs: 1000,
+          motionId: 'custom-motion',
+        })
+      )
+    })
+
+    it('returns cached combined result when cache=true and all actions are cached', async () => {
+      const { service, cacheService, mediaPipeline } = createService()
+      cacheService.checkCache.mockResolvedValueOnce('/tmp/output/combined-cached.mp4')
+      mediaPipeline.getVideoDurationMs.mockResolvedValueOnce(3000)
+
+      const payload = withPreset({
+        stream: false,
+        cache: true,
+        requests: [
+          { action: 'speak', params: { text: 'combined' } },
+          { action: 'idle', params: { durationMs: 500 } },
+        ],
+      })
+
+      const result = await service.processBatch(payload)
+
+      expect(result.kind).toBe('combined')
+      expect(result.result.outputPath).toContain('combined-cached.mp4')
+      expect(result.result.durationMs).toBe(3000)
+    })
+
+    it('creates speak log entry with correct inputType for text', async () => {
+      const { service, cacheService } = createService()
+
+      const payload = withPreset({
+        stream: true,
+        requests: [{ action: 'speak', params: { text: 'log entry test' } }],
+      })
+
+      await service.processBatch(payload)
+
+      expect(cacheService.createSpeakLogEntry).toHaveBeenCalledWith(
+        expect.stringContaining('.mp4'),
+        DEFAULT_PRESET_ID,
+        'text',
+        expect.objectContaining({
+          text: 'log entry test',
+          emotion: 'neutral',
+        })
+      )
+    })
+
+    it('creates idle log entry with duration and emotion', async () => {
+      const { service, cacheService } = createService()
+
+      const payload = withPreset({
+        stream: true,
+        requests: [{ action: 'idle', params: { durationMs: 800, emotion: 'sad' } }],
+      })
+
+      await service.processBatch(payload)
+
+      expect(cacheService.createIdleLogEntry).toHaveBeenCalledWith(
+        expect.stringContaining('.mp4'),
+        DEFAULT_PRESET_ID,
+        800,
+        'sad',
+        undefined
+      )
+    })
+
+    it('creates combined log entry with action details', async () => {
+      const { service, cacheService } = createService()
+      cacheService.checkCache.mockResolvedValue(null)
+
+      const payload = withPreset({
+        stream: false,
+        requests: [
+          { action: 'speak', params: { text: 'first' } },
+          { action: 'idle', params: { durationMs: 300 } },
+        ],
+      })
+
+      await service.processBatch(payload)
+
+      expect(cacheService.createCombinedLogEntry).toHaveBeenCalledWith(
+        expect.stringContaining('.mp4'),
+        DEFAULT_PRESET_ID,
+        expect.arrayContaining([
+          expect.objectContaining({ type: 'speak' }),
+          expect.objectContaining({ type: 'idle', durationMs: expect.any(Number) }),
+        ])
+      )
     })
   })
 })

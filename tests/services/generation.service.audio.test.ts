@@ -117,6 +117,17 @@ function createMockDeps(config: ResolvedConfig) {
     sbv2: {
       synthesize: vi.fn(),
     },
+    cacheService: {
+      generateCacheKey: vi.fn().mockReturnValue('test-cache-hash'),
+      computeFileHash: vi.fn().mockResolvedValue('test-file-hash'),
+      computeBufferHash: vi.fn().mockResolvedValue('test-buffer-hash'),
+      checkCache: vi.fn().mockResolvedValue(null),
+      appendLog: vi.fn().mockResolvedValue(undefined),
+      getCachePath: vi.fn().mockReturnValue('/tmp/output/test-cache-hash.mp4'),
+      createSpeakLogEntry: vi.fn().mockReturnValue({ file: 'test.mp4', type: 'speak', preset: 'test-preset', createdAt: '2024-01-01T00:00:00Z' }),
+      createIdleLogEntry: vi.fn().mockReturnValue({ file: 'test.mp4', type: 'idle', preset: 'test-preset', createdAt: '2024-01-01T00:00:00Z' }),
+      createCombinedLogEntry: vi.fn().mockReturnValue({ file: 'test.mp4', type: 'combined', preset: 'test-preset', createdAt: '2024-01-01T00:00:00Z' }),
+    },
   }
 }
 

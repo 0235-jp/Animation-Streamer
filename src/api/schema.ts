@@ -38,6 +38,7 @@ export const speakParamsSchema = z
 export const generateRequestSchema = z.object({
   presetId: z.string().min(1),
   stream: z.boolean().optional(),
+  cache: z.boolean().optional(),
   requests: z
     .array(
       z.object({

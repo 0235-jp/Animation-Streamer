@@ -31,6 +31,8 @@ export interface SpeakParams {
 export interface GenerateRequestPayload {
   presetId: string
   stream?: boolean
+  /** キャッシュを利用するか（デフォルト: false） */
+  cache?: boolean
   /** ライブストリームパイプライン用（output/streamに出力、実パスを返す） */
   forStreamPipeline?: boolean
   requests: GenerateRequestItem[]
