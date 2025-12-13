@@ -59,8 +59,26 @@ export class CacheService {
   }
 
   generateCacheKey(data: CacheKeyData): string {
-    const json = JSON.stringify(data, Object.keys(data).sort())
+    const sortedData = this.deepSortObject(data)
+    const json = JSON.stringify(sortedData)
     return createHash('sha256').update(json).digest('hex')
+  }
+
+  private deepSortObject<T>(obj: T): T {
+    if (obj === null || typeof obj !== 'object') {
+      return obj
+    }
+
+    if (Array.isArray(obj)) {
+      return obj.map((item) => this.deepSortObject(item)) as T
+    }
+
+    const sortedKeys = Object.keys(obj).sort()
+    const result: Record<string, unknown> = {}
+    for (const key of sortedKeys) {
+      result[key] = this.deepSortObject((obj as Record<string, unknown>)[key])
+    }
+    return result as T
   }
 
   async computeFileHash(filePath: string): Promise<string> {

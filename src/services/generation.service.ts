@@ -504,7 +504,20 @@ export class GenerationService {
     jobDir: string,
     requestId: string
   ): Promise<PlannedAction> {
-    return this.buildSpeakPlan(preset, item, jobDir, requestId)
+    const params = item.params ?? {}
+    const emotion = this.ensureOptionalString(params.emotion) ?? DEFAULT_EMOTION
+
+    // キャッシュキーを生成
+    const cacheKeyData = await this.buildSpeakCacheKeyData(preset, params, emotion)
+    const cacheHash = this.cacheService.generateCacheKey(cacheKeyData)
+
+    const plan = await this.buildSpeakPlan(preset, item, jobDir, requestId)
+    return {
+      ...plan,
+      cacheHash,
+      text: cacheKeyData.text,
+      inputType: cacheKeyData.inputType,
+    }
   }
 
   private async buildSpeakPlan(
@@ -695,6 +708,23 @@ export class GenerationService {
     jobDir: string,
     requestId: string
   ): Promise<PlannedAction> {
+    const params = item.params ?? {}
+    const durationMs = this.ensurePositiveNumber(params.durationMs, 'durationMs', requestId)
+    const motionId = this.ensureOptionalString(params.motionId)
+    const emotion = this.ensureOptionalString(params.emotion) ?? DEFAULT_EMOTION
+
+    // キャッシュキーを生成
+    const cacheKeyData: IdleCacheKeyData = {
+      type: 'idle',
+      presetId: preset.id,
+      durationMs,
+      emotion,
+    }
+    if (motionId) {
+      cacheKeyData.motionId = motionId
+    }
+    const cacheHash = this.cacheService.generateCacheKey(cacheKeyData)
+
     const plan = await this.buildIdlePlanData(preset, item, requestId)
     const audioPath = await this.mediaPipeline.createSilentAudio(plan.durationMs, jobDir)
     return {
@@ -704,6 +734,7 @@ export class GenerationService {
       motionIds: plan.motionIds,
       durationMs: plan.durationMs,
       audioPath,
+      cacheHash,
     }
   }
 

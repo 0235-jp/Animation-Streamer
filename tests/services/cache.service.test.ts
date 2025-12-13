@@ -192,6 +192,55 @@ describe('CacheService', () => {
 
       expect(hash1).not.toBe(hash2)
     })
+
+    it('generates same hash regardless of nested object key order', () => {
+      const data1: SpeakCacheKeyData = {
+        type: 'speak',
+        presetId: 'anchor-a',
+        inputType: 'text',
+        text: 'こんにちは',
+        ttsEngine: 'voicevox',
+        ttsSettings: { speakerId: 1, speedScale: 1.0, pitchScale: 0.0 },
+        emotion: 'neutral',
+      }
+      const data2: SpeakCacheKeyData = {
+        type: 'speak',
+        presetId: 'anchor-a',
+        inputType: 'text',
+        text: 'こんにちは',
+        ttsEngine: 'voicevox',
+        ttsSettings: { pitchScale: 0.0, speakerId: 1, speedScale: 1.0 },
+        emotion: 'neutral',
+      }
+
+      const hash1 = cacheService.generateCacheKey(data1)
+      const hash2 = cacheService.generateCacheKey(data2)
+
+      expect(hash1).toBe(hash2)
+    })
+
+    it('generates same hash regardless of top-level key order', () => {
+      const data1: SpeakCacheKeyData = {
+        type: 'speak',
+        presetId: 'anchor-a',
+        inputType: 'text',
+        text: 'こんにちは',
+        emotion: 'neutral',
+      }
+      // Create object with different key order
+      const data2 = {
+        emotion: 'neutral',
+        text: 'こんにちは',
+        inputType: 'text' as const,
+        presetId: 'anchor-a',
+        type: 'speak' as const,
+      }
+
+      const hash1 = cacheService.generateCacheKey(data1)
+      const hash2 = cacheService.generateCacheKey(data2)
+
+      expect(hash1).toBe(hash2)
+    })
   })
 
   describe('getCachePath', () => {
