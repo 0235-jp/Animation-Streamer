@@ -142,7 +142,10 @@ export class CacheService {
       }
     }
 
-    await fs.writeFile(this.logPath, validLines.join('\n') + (validLines.length ? '\n' : ''), 'utf8')
+    // アトミックな書き込み: 一時ファイルに書き込んでからリネーム
+    const tempLogPath = this.logPath + '.tmp'
+    await fs.writeFile(tempLogPath, validLines.join('\n') + (validLines.length ? '\n' : ''), 'utf8')
+    await fs.rename(tempLogPath, this.logPath)
     logger.info({ total: lines.length, valid: validLines.length }, 'Log sync completed')
   }
 
