@@ -135,7 +135,13 @@ export class CacheService {
     for (const line of lines) {
       try {
         const entry = JSON.parse(line) as OutputLogEntry
-        const filePath = path.join(this.outputDir, entry.file)
+        // パストラバーサル防止: ファイル名のみを許可
+        const safeName = path.basename(entry.file)
+        if (safeName !== entry.file) {
+          logger.warn({ file: entry.file }, 'Skipping suspicious log entry file name')
+          continue
+        }
+        const filePath = path.join(this.outputDir, safeName)
         try {
           await fs.access(filePath)
           validLines.push(line)
