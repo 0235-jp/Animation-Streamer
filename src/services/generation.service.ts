@@ -954,28 +954,14 @@ export class GenerationService {
   ): Record<string, unknown> {
     if (audioProfile.ttsEngine === 'voicevox') {
       const { voice } = this.resolveVoicevoxVoiceProfile(audioProfile, emotion)
-      return {
-        speakerId: voice.speakerId,
-        speedScale: voice.speedScale,
-        pitchScale: voice.pitchScale,
-        intonationScale: voice.intonationScale,
-        volumeScale: voice.volumeScale,
-      }
+      // emotion はキャッシュキーに別途含まれるため除外
+      const { emotion: _emotion, ...ttsSettings } = voice
+      return ttsSettings
     } else {
       const { voice } = this.resolveSbv2VoiceProfile(audioProfile, emotion)
-      return {
-        modelId: voice.modelId,
-        modelName: voice.modelName,
-        speakerId: voice.speakerId,
-        speakerName: voice.speakerName,
-        sdpRatio: voice.sdpRatio,
-        noise: voice.noise,
-        noisew: voice.noisew,
-        length: voice.length,
-        language: voice.language,
-        style: voice.style,
-        styleWeight: voice.styleWeight,
-      }
+      // emotion はキャッシュキーに別途含まれるため除外
+      const { emotion: _emotion, ...ttsSettings } = voice
+      return ttsSettings
     }
   }
 }
