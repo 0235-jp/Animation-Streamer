@@ -213,7 +213,7 @@ export class CacheService {
   createCombinedLogEntry(
     fileName: string,
     presetId: string,
-    actions: Array<{ type: string; text?: string; durationMs?: number; inputType?: string }>
+    actions: Array<{ type: string; text?: string; durationMs?: number; inputType?: SpeakInputType }>
   ): OutputLogEntry {
     return {
       file: fileName,

@@ -8,6 +8,7 @@ vi.mock('node:fs', () => ({
     readFile: vi.fn(),
     writeFile: vi.fn(),
     appendFile: vi.fn(),
+    rename: vi.fn(),
   },
   createReadStream: vi.fn(),
 }))
@@ -309,13 +310,19 @@ describe('CacheService', () => {
 
       vi.mocked(fs.readFile).mockResolvedValueOnce(logContent)
       vi.mocked(fs.writeFile).mockResolvedValueOnce(undefined)
+      vi.mocked(fs.rename).mockResolvedValueOnce(undefined)
 
       await cacheService.syncLogWithFiles()
 
+      // アトミック書き込み: 一時ファイルに書き込み後リネーム
       expect(fs.writeFile).toHaveBeenCalledWith(
-        '/tmp/output/output.jsonl',
+        '/tmp/output/output.jsonl.tmp',
         expect.not.stringContaining('missing.mp4'),
         'utf8'
+      )
+      expect(fs.rename).toHaveBeenCalledWith(
+        '/tmp/output/output.jsonl.tmp',
+        '/tmp/output/output.jsonl'
       )
     })
 
@@ -342,13 +349,19 @@ describe('CacheService', () => {
 
       vi.mocked(fs.readFile).mockResolvedValueOnce(logContent)
       vi.mocked(fs.writeFile).mockResolvedValueOnce(undefined)
+      vi.mocked(fs.rename).mockResolvedValueOnce(undefined)
 
       await cacheService.syncLogWithFiles()
 
       const writeCall = vi.mocked(fs.writeFile).mock.calls[0]
+      expect(writeCall[0]).toBe('/tmp/output/output.jsonl.tmp')
       expect(writeCall[1]).not.toContain('invalid json line')
       expect(writeCall[1]).toContain('valid.mp4')
       expect(writeCall[1]).toContain('also-valid.mp4')
+      expect(fs.rename).toHaveBeenCalledWith(
+        '/tmp/output/output.jsonl.tmp',
+        '/tmp/output/output.jsonl'
+      )
     })
   })
 

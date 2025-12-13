@@ -778,7 +778,7 @@ export class GenerationService {
   private resolveVoicevoxVoiceProfile(
     audioProfile: ResolvedVoicevoxAudioProfile,
     emotion: string | undefined
-  ): { voice: VoicevoxVoiceOptions; endpoint: string } {
+  ): { voice: VoicevoxVoiceProfile; endpoint: string } {
     const normalizedEmotion = (emotion ?? 'neutral').trim().toLowerCase()
     let matchingVoice: VoicevoxVoiceProfile | undefined
     let neutralVoice: VoicevoxVoiceProfile | undefined
@@ -803,7 +803,7 @@ export class GenerationService {
   private resolveSbv2VoiceProfile(
     audioProfile: ResolvedSbv2AudioProfile,
     emotion: string | undefined
-  ): { voice: StyleBertVits2VoiceOptions; endpoint: string } {
+  ): { voice: Sbv2VoiceProfile; endpoint: string } {
     const normalizedEmotion = (emotion ?? 'neutral').trim().toLowerCase()
     let matchingVoice: Sbv2VoiceProfile | undefined
     let neutralVoice: Sbv2VoiceProfile | undefined
