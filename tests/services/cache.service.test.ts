@@ -264,7 +264,9 @@ describe('CacheService', () => {
     })
 
     it('returns null when file does not exist', async () => {
-      vi.mocked(fs.access).mockRejectedValueOnce(new Error('ENOENT'))
+      const error = new Error('ENOENT') as NodeJS.ErrnoException
+      error.code = 'ENOENT'
+      vi.mocked(fs.access).mockRejectedValueOnce(error)
 
       const result = await cacheService.checkCache('missing-hash')
 

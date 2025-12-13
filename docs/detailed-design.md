@@ -594,7 +594,7 @@ interface GenerateRequestPayload {
     ▼
 cache = true ?
     │
-    ├─ No ──▶ 生成 ──▶ {hash}.mp4 保存 ──▶ ログ追記 ──▶ レスポンス
+    ├─ No ──▶ 生成 ──▶ {hash}-{uuid}.mp4 保存 ──▶ ログ追記 ──▶ レスポンス
     │
     └─ Yes ─▶ output/{hash}.mp4 存在する？
                   │
