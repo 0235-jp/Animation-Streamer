@@ -45,7 +45,7 @@ export interface OutputLogEntry {
   audioHash?: string
   durationMs?: number
   motionId?: string
-  actions?: Array<{ type: string; text?: string; durationMs?: number }>
+  actions?: Array<{ type: string; text?: string; durationMs?: number; inputType?: SpeakInputType }>
   createdAt: string
 }
 
