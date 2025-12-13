@@ -80,6 +80,44 @@ curl -X POST http://localhost:4000/api/generate \
 `presetId` はリクエスト直下で **必須** 指定です（すべてのアクションが同一プリセットを参照します）。
 `server.apiKey` を設定した場合は `-H 'X-API-Key: <your-key>'` を付与してください。
 
+## 動画キャッシュ
+
+`/api/generate` で生成した動画はキャッシュとして再利用できます。
+
+### キャッシュの有効化
+```bash
+curl -X POST http://localhost:4000/api/generate \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "presetId": "anchor-a",
+    "cache": true,
+    "requests": [
+      { "action": "speak", "params": { "text": "こんにちは" } }
+    ]
+  }'
+```
+
+`cache: true` を指定すると、同じ設定・同じテキストのリクエストでは既存のファイルを再利用し、TTS や動画生成をスキップします。
+
+### ファイル名の仕様
+- `cache: true`: ハッシュベースのファイル名（例: `abc123...def.mp4`）。同一内容は同一ファイル。
+- `cache: false`（デフォルト）: ハッシュ+UUID（例: `abc123...def-uuid.mp4`）。毎回新規ファイルを生成。
+- カスタムアクション: `{presetId}-{actionId}.mp4`（例: `kanon-loop.mp4`）。常に固定。
+
+### ログファイル
+生成された動画の情報は `output/output.jsonl` に記録されます（JSONL形式）。
+
+```json
+{"file":"abc123.mp4","type":"speak","preset":"anchor-a","inputType":"text","text":"こんにちは","emotion":"neutral","tts":"voicevox","speakerId":1,"createdAt":"2024-01-01T00:00:00.000Z"}
+{"file":"def456.mp4","type":"idle","preset":"anchor-a","durationMs":2000,"emotion":"neutral","createdAt":"2024-01-01T00:00:00.000Z"}
+```
+
+サーバー起動時に、存在しないファイルのログエントリは自動で削除されます。
+
+### 対象範囲
+- **キャッシュ対象**: `speak`（text/audio/audio+transcribe）、`idle`、結合動画
+- **キャッシュ対象外**: `/api/stream/*`（ストリーミング配信用）
+
 ## ストリーミング配信 API
 
 RTMP/HTTP-FLV でリアルタイム配信を行う場合は `/api/stream/*` エンドポイントを使用します。

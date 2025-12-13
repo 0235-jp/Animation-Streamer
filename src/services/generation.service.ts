@@ -15,6 +15,7 @@ import { MediaPipeline, type ClipSource, NoAudioTrackError } from './media-pipel
 import { VoicevoxClient, type VoicevoxVoiceOptions } from './voicevox'
 import { StyleBertVits2Client, type StyleBertVits2VoiceOptions } from './style-bert-vits2'
 import { STTClient } from './stt'
+import { CacheService, type SpeakCacheKeyData, type IdleCacheKeyData, type CombinedCacheKeyData, type SpeakInputType } from './cache.service'
 import type { ActionResult, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler, AudioInput } from '../types/generate'
 import { logger } from '../utils/logger'
 
@@ -38,6 +39,9 @@ interface PlannedAction {
   motionIds: string[]
   durationMs: number
   audioPath: string
+  cacheHash?: string
+  text?: string
+  inputType?: SpeakInputType
 }
 
 interface IndexedRequest {
@@ -63,6 +67,7 @@ export class GenerationService {
   private readonly mediaPipeline: MediaPipeline
   private readonly voicevox: VoicevoxClient
   private readonly sbv2: StyleBertVits2Client
+  private readonly cacheService: CacheService
 
   constructor(deps: {
     config: ResolvedConfig
@@ -70,12 +75,14 @@ export class GenerationService {
     mediaPipeline: MediaPipeline
     voicevox: VoicevoxClient
     sbv2: StyleBertVits2Client
+    cacheService: CacheService
   }) {
     this.config = deps.config
     this.clipPlanner = deps.clipPlanner
     this.mediaPipeline = deps.mediaPipeline
     this.voicevox = deps.voicevox
     this.sbv2 = deps.sbv2
+    this.cacheService = deps.cacheService
   }
 
   async processBatch(
@@ -84,6 +91,7 @@ export class GenerationService {
   ): Promise<StreamBatchResult | CombinedBatchResult> {
     const preset = this.resolvePresetById(this.ensureString(payload.presetId, 'presetId', '0'))
     const includeDebug = Boolean(payload.debug)
+    const useCache = Boolean(payload.cache)
     const indexedRequests: IndexedRequest[] = payload.requests.map((item, index) => ({
       item,
       requestId: String(index + 1),
@@ -91,10 +99,10 @@ export class GenerationService {
 
     const forStreamPipeline = payload.forStreamPipeline ?? false
     if (payload.stream) {
-      const results = await this.processStreamingBatch(indexedRequests, preset, includeDebug, forStreamPipeline, handler)
+      const results = await this.processStreamingBatch(indexedRequests, preset, includeDebug, forStreamPipeline, useCache, handler)
       return { kind: 'stream', results }
     }
-    const combined = await this.processCombinedBatch(indexedRequests, preset, includeDebug)
+    const combined = await this.processCombinedBatch(indexedRequests, preset, includeDebug, useCache)
     return { kind: 'combined', result: combined }
   }
 
@@ -103,12 +111,13 @@ export class GenerationService {
     preset: ResolvedPreset,
     includeDebug: boolean,
     forStreamPipeline: boolean,
+    useCache: boolean,
     handler?: StreamPushHandler
   ): Promise<ActionResult[]> {
     const results: ActionResult[] = []
     for (const { item, requestId } of indexedRequests) {
       try {
-        const result = await this.processSingle(preset, item, requestId, includeDebug, forStreamPipeline)
+        const result = await this.processSingle(preset, item, requestId, includeDebug, forStreamPipeline, useCache)
         if (handler?.onResult) {
           await handler.onResult(result)
         }
@@ -130,15 +139,20 @@ export class GenerationService {
   private async processCombinedBatch(
     indexedRequests: IndexedRequest[],
     preset: ResolvedPreset,
-    includeDebug: boolean
+    includeDebug: boolean,
+    useCache: boolean
   ): Promise<CombinedResult> {
     const plannedActions: PlannedAction[] = []
+    const actionHashes: string[] = []
     const jobDir = await this.mediaPipeline.createJobDir()
     try {
       for (const { item, requestId } of indexedRequests) {
         try {
           const planned = await this.planAction(preset, item, jobDir, requestId)
           plannedActions.push(planned)
+          if (planned.cacheHash) {
+            actionHashes.push(planned.cacheHash)
+          }
         } catch (error) {
           if (error instanceof ActionProcessingError) throw error
           throw new ActionProcessingError(
@@ -146,6 +160,27 @@ export class GenerationService {
             requestId,
             500
           )
+        }
+      }
+
+      // 結合動画のキャッシュキーを生成
+      const combinedCacheKey: CombinedCacheKeyData = {
+        type: 'combined',
+        presetId: preset.id,
+        actionHashes,
+      }
+      const combinedHash = this.cacheService.generateCacheKey(combinedCacheKey)
+
+      // キャッシュチェック
+      if (useCache) {
+        const cachedPath = await this.cacheService.checkCache(combinedHash)
+        if (cachedPath) {
+          const durationMs = await this.mediaPipeline.getVideoDurationMs(cachedPath)
+          return {
+            outputPath: this.toResponsePath(cachedPath),
+            durationMs: Math.round(durationMs),
+            motionIds: includeDebug ? plannedActions.flatMap((action) => action.motionIds) : undefined,
+          }
         }
       }
 
@@ -160,9 +195,24 @@ export class GenerationService {
         durationMs: totalDuration,
         jobDir,
       })
-      const combinedPath = await this.moveToTemp(combinedTempPath, 'batch')
+
+      // ファイル名を決定（キャッシュ有効: ハッシュのみ、無効: ハッシュ+UUID）
+      const baseName = useCache ? combinedHash : `${combinedHash}-${randomUUID()}`
+      const outputPath = await this.moveToOutput(combinedTempPath, baseName, false)
+
+      // ログに追記
+      const fileName = `${baseName}.mp4`
+      const logActions = plannedActions.map((action) => ({
+        type: action.action,
+        text: action.text,
+        durationMs: action.action === 'idle' ? action.durationMs : undefined,
+        inputType: action.inputType,
+      }))
+      const logEntry = this.cacheService.createCombinedLogEntry(fileName, preset.id, logActions)
+      await this.cacheService.appendLog(logEntry)
+
       return {
-        outputPath: combinedPath,
+        outputPath,
         durationMs: Math.round(totalDuration),
         motionIds: includeDebug ? plannedActions.flatMap((action) => action.motionIds) : undefined,
       }
@@ -176,14 +226,15 @@ export class GenerationService {
     item: GenerateRequestItem,
     requestId: string,
     includeDebug: boolean,
-    forStream = false
+    forStream = false,
+    useCache = false
   ): Promise<ActionResult> {
     const actionName = item.action.toLowerCase()
     switch (actionName) {
       case 'speak':
-        return this.handleSpeak(preset, item, requestId, includeDebug, forStream)
+        return this.handleSpeak(preset, item, requestId, includeDebug, forStream, useCache)
       case 'idle':
-        return this.handleIdle(preset, item, requestId, includeDebug, forStream)
+        return this.handleIdle(preset, item, requestId, includeDebug, forStream, useCache)
       default:
         return this.handleCustomAction(preset, item, requestId, includeDebug, forStream)
     }
@@ -211,8 +262,30 @@ export class GenerationService {
     item: GenerateRequestItem,
     requestId: string,
     includeDebug: boolean,
-    forStream = false
+    forStream = false,
+    useCache = false
   ): Promise<ActionResult> {
+    const params = item.params ?? {}
+    const emotion = this.ensureOptionalString(params.emotion) ?? DEFAULT_EMOTION
+
+    // キャッシュキーを生成
+    const cacheKeyData = await this.buildSpeakCacheKeyData(preset, params, emotion)
+    const cacheHash = this.cacheService.generateCacheKey(cacheKeyData)
+
+    // forStream でない場合のみキャッシュをチェック
+    if (!forStream && useCache) {
+      const cachedPath = await this.cacheService.checkCache(cacheHash)
+      if (cachedPath) {
+        const durationMs = await this.mediaPipeline.getVideoDurationMs(cachedPath)
+        return {
+          id: requestId,
+          action: item.action,
+          outputPath: this.toResponsePath(cachedPath),
+          durationMs: Math.round(durationMs),
+        }
+      }
+    }
+
     const jobDir = await this.mediaPipeline.createJobDir()
     try {
       const plan = await this.buildSpeakPlan(preset, item, jobDir, requestId)
@@ -223,7 +296,30 @@ export class GenerationService {
         jobDir,
       })
 
-      const finalPath = await this.moveToTemp(outputPath, `speak-${requestId}`, forStream)
+      // ファイル名を決定（ストリーム: UUID、通常: ハッシュベース）
+      const baseName = forStream
+        ? `speak-${requestId}-${randomUUID()}`
+        : useCache ? cacheHash : `${cacheHash}-${randomUUID()}`
+      const finalPath = await this.moveToOutput(outputPath, baseName, forStream)
+
+      // 非ストリームモードではログに追記
+      if (!forStream) {
+        const fileName = `${baseName}.mp4`
+        const logEntry = this.cacheService.createSpeakLogEntry(
+          fileName,
+          preset.id,
+          cacheKeyData.inputType,
+          {
+            text: cacheKeyData.text ?? plan.text,
+            audioHash: cacheKeyData.audioHash,
+            ttsEngine: cacheKeyData.ttsEngine,
+            speakerId: cacheKeyData.ttsSettings?.speakerId as number | undefined,
+            emotion,
+          }
+        )
+        await this.cacheService.appendLog(logEntry)
+      }
+
       const result: ActionResult = {
         id: requestId,
         action: item.action,
@@ -244,8 +340,40 @@ export class GenerationService {
     item: GenerateRequestItem,
     requestId: string,
     includeDebug: boolean,
-    forStream = false
+    forStream = false,
+    useCache = false
   ): Promise<ActionResult> {
+    const params = item.params ?? {}
+    const durationMs = this.ensurePositiveNumber(params.durationMs, 'durationMs', requestId)
+    const motionId = this.ensureOptionalString(params.motionId)
+    const emotion = this.ensureOptionalString(params.emotion) ?? DEFAULT_EMOTION
+
+    // キャッシュキーを生成
+    const cacheKeyData: IdleCacheKeyData = {
+      type: 'idle',
+      presetId: preset.id,
+      durationMs,
+      emotion,
+    }
+    if (motionId) {
+      cacheKeyData.motionId = motionId
+    }
+    const cacheHash = this.cacheService.generateCacheKey(cacheKeyData)
+
+    // forStream でない場合のみキャッシュをチェック
+    if (!forStream && useCache) {
+      const cachedPath = await this.cacheService.checkCache(cacheHash)
+      if (cachedPath) {
+        const cachedDurationMs = await this.mediaPipeline.getVideoDurationMs(cachedPath)
+        return {
+          id: requestId,
+          action: item.action,
+          outputPath: this.toResponsePath(cachedPath),
+          durationMs: Math.round(cachedDurationMs),
+        }
+      }
+    }
+
     const jobDir = await this.mediaPipeline.createJobDir()
     try {
       const plan = await this.buildIdlePlanData(preset, item, requestId)
@@ -254,7 +382,26 @@ export class GenerationService {
         durationMs: plan.requestedDurationMs,
         jobDir,
       })
-      const finalPath = await this.moveToTemp(outputPath, `idle-${requestId}`, forStream)
+
+      // ファイル名を決定（ストリーム: UUID、通常: ハッシュベース）
+      const baseName = forStream
+        ? `idle-${requestId}-${randomUUID()}`
+        : useCache ? cacheHash : `${cacheHash}-${randomUUID()}`
+      const finalPath = await this.moveToOutput(outputPath, baseName, forStream)
+
+      // 非ストリームモードではログに追記
+      if (!forStream) {
+        const fileName = `${baseName}.mp4`
+        const logEntry = this.cacheService.createIdleLogEntry(
+          fileName,
+          preset.id,
+          durationMs,
+          emotion,
+          motionId
+        )
+        await this.cacheService.appendLog(logEntry)
+      }
+
       const result: ActionResult = {
         id: requestId,
         action: item.action,
@@ -286,7 +433,8 @@ export class GenerationService {
         durationMs: plan.durationMs,
         jobDir,
       })
-      const finalPath = await this.moveToTemp(outputPath, `action-${requestId}`, forStream)
+      const actionId = item.action.toLowerCase()
+      const finalPath = await this.moveToOutput(outputPath, `${preset.id}-${actionId}`, forStream)
       const result: ActionResult = {
         id: requestId,
         action: item.action,
@@ -324,8 +472,8 @@ export class GenerationService {
     throw new ActionProcessingError(`${field} は正の数値で指定してください`, requestId)
   }
 
-  private async moveToTemp(sourcePath: string, prefix: string, forStream = false): Promise<string> {
-    const fileName = `${prefix}-${randomUUID()}.mp4`
+  private async moveToOutput(sourcePath: string, baseName: string, forStream = false): Promise<string> {
+    const fileName = `${baseName}.mp4`
     // ストリームモードではoutput/streamに出力（FFmpegのworkDirと同じ場所）
     const outputDir = forStream
       ? path.join(this.config.paths.outputDir, 'stream')
@@ -709,6 +857,95 @@ export class GenerationService {
       return absolutePath
     }
     return path.join(responsePathBase, relative)
+  }
+
+  private async buildSpeakCacheKeyData(
+    preset: ResolvedPreset,
+    params: Record<string, unknown>,
+    emotion: string
+  ): Promise<SpeakCacheKeyData> {
+    const audio = params.audio as AudioInput | undefined
+    const audioProfile = preset.audioProfile
+
+    if (audio) {
+      // 音声入力の場合
+      let audioHash: string
+      if (audio.base64) {
+        const buffer = Buffer.from(audio.base64, 'base64')
+        audioHash = await this.cacheService.computeBufferHash(buffer)
+      } else if (audio.path) {
+        audioHash = await this.cacheService.computeFileHash(audio.path)
+      } else {
+        throw new Error('audio には path または base64 のいずれかを指定してください')
+      }
+
+      if (audio.transcribe) {
+        // STT → TTS の場合
+        const ttsSettings = this.getTtsSettings(audioProfile, emotion)
+        return {
+          type: 'speak',
+          presetId: preset.id,
+          inputType: 'audio_transcribe',
+          audioHash,
+          ttsEngine: audioProfile.ttsEngine,
+          ttsSettings,
+          emotion,
+        }
+      } else {
+        // 音声直接使用の場合
+        return {
+          type: 'speak',
+          presetId: preset.id,
+          inputType: 'audio',
+          audioHash,
+          emotion,
+        }
+      }
+    } else {
+      // テキスト入力の場合
+      const text = params.text as string
+      const ttsSettings = this.getTtsSettings(audioProfile, emotion)
+      return {
+        type: 'speak',
+        presetId: preset.id,
+        inputType: 'text',
+        text,
+        ttsEngine: audioProfile.ttsEngine,
+        ttsSettings,
+        emotion,
+      }
+    }
+  }
+
+  private getTtsSettings(
+    audioProfile: ResolvedVoicevoxAudioProfile | ResolvedSbv2AudioProfile,
+    emotion: string
+  ): Record<string, unknown> {
+    if (audioProfile.ttsEngine === 'voicevox') {
+      const { voice } = this.resolveVoicevoxVoiceProfile(audioProfile, emotion)
+      return {
+        speakerId: voice.speakerId,
+        speedScale: voice.speedScale,
+        pitchScale: voice.pitchScale,
+        intonationScale: voice.intonationScale,
+        volumeScale: voice.volumeScale,
+      }
+    } else {
+      const { voice } = this.resolveSbv2VoiceProfile(audioProfile, emotion)
+      return {
+        modelId: voice.modelId,
+        modelName: voice.modelName,
+        speakerId: voice.speakerId,
+        speakerName: voice.speakerName,
+        sdpRatio: voice.sdpRatio,
+        noise: voice.noise,
+        noisew: voice.noisew,
+        length: voice.length,
+        language: voice.language,
+        style: voice.style,
+        styleWeight: voice.styleWeight,
+      }
+    }
   }
 }
 
