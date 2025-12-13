@@ -23,6 +23,7 @@ paths:
               -H 'X-API-Key: <your-api-key>' \
               -d '{
                 "stream": false,
+                "cache": false,
                 "debug": true,
                 "presetId": "anchor-a",
                 "requests": [
@@ -43,6 +44,7 @@ paths:
                 summary: Batch request
                 value:
                   stream: false
+                  cache: false
                   debug: true
                   presetId: "anchor-a"
                   requests:
@@ -215,6 +217,10 @@ components:
         stream:
           type: boolean
           description: Whether to stream results as NDJSON
+        cache:
+          type: boolean
+          default: false
+          description: When true, reuse cached files if available. When false (default), always generate new files with hash+UUID naming.
         requests:
           type: array
           minItems: 1
