@@ -169,6 +169,88 @@ OBS のメディアソースに `rtmp://localhost:1935/live/main` を指定し�
 
 `config/example.stream-profile.docker.json` / `config/example.stream-profile.local.json` には Anchor のサンプルが含まれているので、必要に応じて `presets[]` を増やし、`presetId` を切り替えて利用してください。
 
+## リップシンク (speakLipSync)
+
+`speakLipSync` アクションは、VOICEVOX の音素タイミング情報を活用して、口の動きを音声に正確に同期させた動画を生成します。
+
+### speak との違い
+
+| 項目 | speak（既存） | speakLipSync（新規） |
+|------|--------------|---------------------|
+| 素材 | モーション動画（mp4） | 全身画像（png）× 7枚/emotion |
+| 口の動き | 動画に含まれる（固定） | 音声に合わせて画像切り替え |
+| 同期精度 | 音声の長さのみ | 音素レベルで同期 |
+| TTS対応 | VOICEVOX / Style-Bert-VITS2 | VOICEVOX のみ |
+
+### 設定
+
+プリセットに `lipSync` 配列を追加し、emotion ごとに7種類の口形画像を指定します。
+
+```json
+{
+  "presets": [{
+    "id": "anchor-a",
+    "audioProfile": {
+      "ttsEngine": "voicevox",
+      "voicevoxUrl": "http://127.0.0.1:50021",
+      "voices": [{ "emotion": "neutral", "speakerId": 1 }]
+    },
+    "lipSync": [
+      {
+        "id": "lip-neutral",
+        "emotion": "neutral",
+        "images": {
+          "a": "lip/neutral_a.png",
+          "i": "lip/neutral_i.png",
+          "u": "lip/neutral_u.png",
+          "e": "lip/neutral_e.png",
+          "o": "lip/neutral_o.png",
+          "N": "lip/neutral_n.png",
+          "closed": "lip/neutral_closed.png"
+        }
+      }
+    ]
+  }]
+}
+```
+
+**images のキー:**
+- `a`, `i`, `u`, `e`, `o`: 母音の口形
+- `N`: 「ん」の口形
+- `closed`: 閉じた口（促音・ポーズ時）
+
+画像は `motions/` ディレクトリ配下に配置します（例: `motions/lip/neutral_a.png`）。
+
+### API 例
+
+```bash
+# テキスト入力
+curl -X POST http://localhost:4000/api/generate \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "presetId": "anchor-a",
+    "requests": [
+      { "action": "speakLipSync", "params": { "text": "こんにちは", "emotion": "neutral" } }
+    ]
+  }'
+
+# 音声入力（STT→TTS）
+curl -X POST http://localhost:4000/api/generate \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "presetId": "anchor-a",
+    "requests": [
+      { "action": "speakLipSync", "params": { "audio": { "path": "/path/to/voice.wav", "transcribe": true } } }
+    ]
+  }'
+```
+
+### 制限事項
+
+- **VOICEVOX 専用**: Style-Bert-VITS2 では使用不可（モーラタイミング情報が取得できないため）
+- **transcribe: true 必須**: 音声入力時は `transcribe: true` が必要（直接音声使用は不可）
+- **lipSync 設定必須**: プリセットに `lipSync` 配列がない場合はエラー
+
 ## 音声入力 (STT)
 
 `speak` アクションではテキストの代わりに音声ファイルを入力できます。

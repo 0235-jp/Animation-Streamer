@@ -9,6 +9,7 @@ import {
   type Sbv2VoiceProfile,
   type ResolvedVoicevoxAudioProfile,
   type ResolvedSbv2AudioProfile,
+  type ResolvedLipSyncVariant,
 } from '../config/loader'
 import { ClipPlanner } from './clip-planner'
 import { MediaPipeline, type ClipSource, NoAudioTrackError } from './media-pipeline'
@@ -16,7 +17,8 @@ import { VoicevoxClient, type VoicevoxVoiceOptions } from './voicevox'
 import { StyleBertVits2Client, type StyleBertVits2VoiceOptions } from './style-bert-vits2'
 import { STTClient } from './stt'
 import { CacheService, type SpeakCacheKeyData, type IdleCacheKeyData, type CombinedCacheKeyData, type SpeakInputType } from './cache.service'
-import type { ActionResult, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler, AudioInput } from '../types/generate'
+import { generateVisemeTimeline, composeLipSyncVideo } from './lip-sync'
+import type { ActionResult, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler, AudioInput, VoicevoxAudioQueryResponse } from '../types/generate'
 import { logger } from '../utils/logger'
 
 const DEFAULT_EMOTION = 'neutral'
@@ -233,6 +235,8 @@ export class GenerationService {
     switch (actionName) {
       case 'speak':
         return this.handleSpeak(preset, item, requestId, includeDebug, forStream, useCache)
+      case 'speaklipsync':
+        return this.handleSpeakLipSync(preset, item, requestId, includeDebug, forStream, useCache)
       case 'idle':
         return this.handleIdle(preset, item, requestId, includeDebug, forStream, useCache)
       default:
@@ -250,6 +254,8 @@ export class GenerationService {
     switch (actionName) {
       case 'speak':
         return this.planSpeakAction(preset, item, jobDir, requestId)
+      case 'speaklipsync':
+        return this.planSpeakLipSyncAction(preset, item, jobDir, requestId)
       case 'idle':
         return this.planIdleAction(preset, item, jobDir, requestId)
       default:
@@ -333,6 +339,130 @@ export class GenerationService {
     } finally {
       await this.mediaPipeline.removeJobDir(jobDir)
     }
+  }
+
+  private async handleSpeakLipSync(
+    preset: ResolvedPreset,
+    item: GenerateRequestItem,
+    requestId: string,
+    includeDebug: boolean,
+    forStream = false,
+    useCache = false
+  ): Promise<ActionResult> {
+    const params = item.params ?? {}
+    const emotion = this.ensureOptionalString(params.emotion) ?? DEFAULT_EMOTION
+    const audio = params.audio as AudioInput | undefined
+
+    // バリデーション: VOICEVOXのみ対応
+    this.validateSpeakLipSyncRequest(preset, params, requestId)
+
+    const jobDir = await this.mediaPipeline.createJobDir()
+    try {
+      // テキストを取得（直接指定 or STT）
+      let text: string
+      if (audio) {
+        // 音声入力の場合はSTT
+        const audioFilePath = await this.resolveAudioFilePath(audio, jobDir, requestId)
+        text = await this.transcribeAudio(audioFilePath, requestId)
+        logger.info({ requestId, textLength: text.length }, 'Audio transcribed for lip sync')
+      } else {
+        text = this.ensureString(params.text, 'text', requestId)
+      }
+
+      // VOICEVOX TTS（audio_queryとモーラ情報付き）
+      const audioProfile = preset.audioProfile as ResolvedVoicevoxAudioProfile
+      const { voice, endpoint } = this.resolveVoicevoxVoiceProfile(audioProfile, emotion)
+      const audioPath = path.join(jobDir, `voice-${requestId}.wav`)
+      const { audioQuery } = await this.voicevox.synthesizeWithQuery(text, audioPath, voice, { endpoint })
+
+      // ビゼムタイムラインを生成
+      const timeline = generateVisemeTimeline(audioQuery)
+
+      // リップシンク画像セットを取得
+      const lipSyncVariant = this.resolveLipSyncVariant(preset, emotion)
+
+      // リップシンク動画を合成
+      const { outputPath, durationMs } = await composeLipSyncVideo({
+        timeline,
+        images: lipSyncVariant.images,
+        audioPath,
+        jobDir,
+      })
+
+      // ファイル名を決定
+      const baseName = forStream
+        ? `speaklipsync-${requestId}-${randomUUID()}`
+        : `speaklipsync-${randomUUID()}`
+      const finalPath = await this.moveToOutput(outputPath, baseName, forStream)
+
+      logger.info({ requestId, durationMs, timelineSegments: timeline.length }, 'Lip sync video generated')
+
+      return {
+        id: requestId,
+        action: item.action,
+        outputPath: finalPath,
+        durationMs: Math.round(durationMs),
+      }
+    } finally {
+      await this.mediaPipeline.removeJobDir(jobDir)
+    }
+  }
+
+  private validateSpeakLipSyncRequest(
+    preset: ResolvedPreset,
+    params: Record<string, unknown>,
+    requestId: string
+  ): void {
+    // 1. Style-Bert-VITS2は非対応
+    if (preset.audioProfile.ttsEngine === 'style-bert-vits2') {
+      throw new ActionProcessingError('speakLipSyncはVOICEVOXのみ対応しています', requestId)
+    }
+
+    // 2. 直接音声使用は非対応
+    const audio = params.audio as AudioInput | undefined
+    if (audio && audio.transcribe === false) {
+      throw new ActionProcessingError('speakLipSyncは直接音声使用（transcribe: false）に対応していません', requestId)
+    }
+
+    // 3. lipSync設定がない
+    if (!preset.lipSync || preset.lipSync.length === 0) {
+      throw new ActionProcessingError('lipSync設定がありません', requestId)
+    }
+  }
+
+  private resolveLipSyncVariant(preset: ResolvedPreset, emotion: string): ResolvedLipSyncVariant {
+    const normalizedEmotion = emotion.trim().toLowerCase()
+    let matchingVariant: ResolvedLipSyncVariant | undefined
+    let neutralVariant: ResolvedLipSyncVariant | undefined
+
+    for (const variant of preset.lipSync ?? []) {
+      if (variant.emotion === normalizedEmotion) {
+        matchingVariant = variant
+        break
+      }
+      if (!neutralVariant && variant.emotion === 'neutral') {
+        neutralVariant = variant
+      }
+    }
+
+    const selected = matchingVariant ?? neutralVariant
+    if (!selected) {
+      throw new Error('lipSyncに少なくとも1つの設定が必要です')
+    }
+    return selected
+  }
+
+  private async resolveAudioFilePath(
+    audio: AudioInput,
+    jobDir: string,
+    requestId: string
+  ): Promise<string> {
+    if (audio.base64) {
+      return this.saveBase64Audio(audio.base64, jobDir, requestId)
+    } else if (audio.path) {
+      return this.copyExternalAudio(audio.path, jobDir, requestId)
+    }
+    throw new ActionProcessingError('audio には path または base64 のいずれかを指定してください', requestId)
   }
 
   private async handleIdle(
@@ -517,6 +647,62 @@ export class GenerationService {
       cacheHash,
       text: cacheKeyData.text,
       inputType: cacheKeyData.inputType,
+    }
+  }
+
+  private async planSpeakLipSyncAction(
+    preset: ResolvedPreset,
+    item: GenerateRequestItem,
+    jobDir: string,
+    requestId: string
+  ): Promise<PlannedAction> {
+    const params = item.params ?? {}
+    const emotion = this.ensureOptionalString(params.emotion) ?? DEFAULT_EMOTION
+    const audio = params.audio as AudioInput | undefined
+
+    // バリデーション
+    this.validateSpeakLipSyncRequest(preset, params, requestId)
+
+    // テキストを取得
+    let text: string
+    if (audio) {
+      const audioFilePath = await this.resolveAudioFilePath(audio, jobDir, requestId)
+      text = await this.transcribeAudio(audioFilePath, requestId)
+    } else {
+      text = this.ensureString(params.text, 'text', requestId)
+    }
+
+    // VOICEVOX TTS（audio_queryとモーラ情報付き）
+    const audioProfile = preset.audioProfile as ResolvedVoicevoxAudioProfile
+    const { voice, endpoint } = this.resolveVoicevoxVoiceProfile(audioProfile, emotion)
+    const audioPath = path.join(jobDir, `voice-${requestId}.wav`)
+    const { audioQuery } = await this.voicevox.synthesizeWithQuery(text, audioPath, voice, { endpoint })
+
+    // ビゼムタイムラインを生成
+    const timeline = generateVisemeTimeline(audioQuery)
+    const lipSyncVariant = this.resolveLipSyncVariant(preset, emotion)
+
+    // リップシンク動画を合成
+    const { outputPath: videoPath, durationMs } = await composeLipSyncVideo({
+      timeline,
+      images: lipSyncVariant.images,
+      audioPath,
+      jobDir,
+    })
+
+    // 生成した動画から音声を抽出（連結用）
+    const extractedAudioPath = await this.mediaPipeline.extractAudioTrack(videoPath, jobDir, `lipsync-audio-${requestId}`)
+
+    // PlannedActionとして返す（生成した動画を1つのclipとして扱う）
+    return {
+      id: requestId,
+      action: item.action,
+      clips: [{ id: `lipsync-${requestId}`, path: videoPath, durationMs }],
+      motionIds: [],
+      durationMs,
+      audioPath: extractedAudioPath,
+      text,
+      inputType: audio ? 'audio_transcribe' : 'text',
     }
   }
 

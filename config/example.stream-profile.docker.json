@@ -63,7 +63,35 @@
             "intonationScale": 1.2
           }
         ]
-      }
+      },
+      "lipSync": [
+        {
+          "id": "lip-neutral",
+          "emotion": "neutral",
+          "images": {
+            "a": "lip/neutral_a.png",
+            "i": "lip/neutral_i.png",
+            "u": "lip/neutral_u.png",
+            "e": "lip/neutral_e.png",
+            "o": "lip/neutral_o.png",
+            "N": "lip/neutral_n.png",
+            "closed": "lip/neutral_closed.png"
+          }
+        },
+        {
+          "id": "lip-happy",
+          "emotion": "happy",
+          "images": {
+            "a": "lip/happy_a.png",
+            "i": "lip/happy_i.png",
+            "u": "lip/happy_u.png",
+            "e": "lip/happy_e.png",
+            "o": "lip/happy_o.png",
+            "N": "lip/happy_n.png",
+            "closed": "lip/happy_closed.png"
+          }
+        }
+      ]
     }
   ]
 }

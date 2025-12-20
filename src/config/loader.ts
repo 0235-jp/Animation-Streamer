@@ -36,6 +36,22 @@ export interface ResolvedTransitionMotion {
   absolutePath: string
 }
 
+export interface ResolvedLipSyncImages {
+  a: string
+  i: string
+  u: string
+  e: string
+  o: string
+  N: string
+  closed: string
+}
+
+export interface ResolvedLipSyncVariant {
+  id: string
+  emotion: string
+  images: ResolvedLipSyncImages
+}
+
 export interface ResolvedSpeechTransitions {
   enter?: ResolvedTransitionMotion[]
   exit?: ResolvedTransitionMotion[]
@@ -102,6 +118,7 @@ export interface ResolvedPreset {
   speechMotions: ResolvedSpeechPools
   speechTransitions?: ResolvedSpeechTransitions
   audioProfile: ResolvedAudioProfile
+  lipSync?: ResolvedLipSyncVariant[]
 }
 
 export interface ResolvedPaths {
@@ -233,6 +250,21 @@ const resolvePreset = (
   const audioProfile = resolveAudioProfile(preset.audioProfile, normalizeVoiceEmotion)
   const actionsMap = new Map(actions.map((action) => [action.id.toLowerCase(), action]))
 
+  // lipSync設定の解決
+  const lipSync = preset.lipSync?.map((variant) => ({
+    id: variant.id,
+    emotion: variant.emotion.toLowerCase(),
+    images: {
+      a: resolveMotionPath(variant.images.a),
+      i: resolveMotionPath(variant.images.i),
+      u: resolveMotionPath(variant.images.u),
+      e: resolveMotionPath(variant.images.e),
+      o: resolveMotionPath(variant.images.o),
+      N: resolveMotionPath(variant.images.N),
+      closed: resolveMotionPath(variant.images.closed),
+    },
+  }))
+
   return {
     id: preset.id,
     displayName: preset.displayName,
@@ -242,6 +274,7 @@ const resolvePreset = (
     speechMotions,
     speechTransitions,
     audioProfile,
+    lipSync,
   }
 }
 

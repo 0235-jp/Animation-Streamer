@@ -51,3 +51,67 @@ export interface ActionResult {
 export interface StreamPushHandler {
   onResult?: (result: ActionResult) => void | Promise<void>
 }
+
+/**
+ * speakLipSync アクションのパラメータ
+ * text または audio のいずれか一方を指定（排他）
+ */
+export interface SpeakLipSyncParams {
+  /** テキスト入力 → TTS → 音声 */
+  text?: string
+  /** 音声入力（transcribe: true必須） */
+  audio?: AudioInput
+  /** 感情（リップシンク画像セット選択用） */
+  emotion?: string
+}
+
+/**
+ * VOICEVOX audio_queryのモーラ情報
+ */
+export interface VoicevoxMora {
+  text: string
+  consonant?: string | null
+  consonant_length?: number | null
+  vowel: string
+  vowel_length: number
+  pitch: number
+}
+
+/**
+ * VOICEVOX audio_queryのアクセント句
+ */
+export interface VoicevoxAccentPhrase {
+  moras: VoicevoxMora[]
+  accent: number
+  pause_mora?: VoicevoxMora | null
+}
+
+/**
+ * VOICEVOX audio_queryレスポンス
+ */
+export interface VoicevoxAudioQueryResponse {
+  accent_phrases: VoicevoxAccentPhrase[]
+  speedScale: number
+  pitchScale: number
+  intonationScale: number
+  volumeScale: number
+  prePhonemeLength: number
+  postPhonemeLength: number
+  outputSamplingRate: number
+  outputStereo: boolean
+  kana?: string
+}
+
+/**
+ * ビゼムタイプ
+ */
+export type VisemeType = 'a' | 'i' | 'u' | 'e' | 'o' | 'N' | 'closed'
+
+/**
+ * ビゼムセグメント（タイムライン上の1区間）
+ */
+export interface VisemeSegment {
+  viseme: VisemeType
+  startMs: number
+  endMs: number
+}

@@ -82,6 +82,23 @@ export const audioProfileSchema = z.discriminatedUnion('ttsEngine', [
   sbv2AudioProfileSchema,
 ])
 
+// リップシンク用画像セットスキーマ
+const lipSyncImagesSchema = z.object({
+  a: z.string().min(1), // あ
+  i: z.string().min(1), // い
+  u: z.string().min(1), // う
+  e: z.string().min(1), // え
+  o: z.string().min(1), // お
+  N: z.string().min(1), // ん
+  closed: z.string().min(1), // 閉じ
+})
+
+const lipSyncVariantSchema = z.object({
+  id: z.string().min(1),
+  emotion: z.string().min(1).default('neutral'),
+  images: lipSyncImagesSchema,
+})
+
 // STT設定スキーマ（トップレベル）- OpenAI互換API
 export const sttConfigSchema = z.object({
   baseUrl: z.string().min(1).default('http://localhost:8000/v1'),
@@ -103,6 +120,7 @@ const presetSchema = z.object({
     })
     .optional(),
   audioProfile: audioProfileSchema,
+  lipSync: z.array(lipSyncVariantSchema).optional(),
 })
 
 export const configSchema = z.object({
