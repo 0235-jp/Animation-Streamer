@@ -111,44 +111,82 @@ export class MediaPipeline {
     const concatPath = path.join(jobDir, 'concat.txt')
     const outputPath = path.join(jobDir, `output-${randomUUID()}.mp4`)
 
-    const concatBody = options.clips.map((clip) => `file '${escapeSingleQuotes(clip.path)}'`).join('\n')
-    await fs.writeFile(concatPath, concatBody, 'utf8')
-
     const targetSeconds = Math.max(0.1, options.durationMs / 1000)
 
-    const args = ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', concatPath]
-    if (options.audioPath) {
-      args.push('-i', options.audioPath)
-    } else {
-      args.push(
-        '-f',
-        'lavfi',
-        '-t',
-        targetSeconds.toString(),
-        '-i',
-        `anullsrc=channel_layout=${AUDIO_CHANNEL_LAYOUT}:sample_rate=${AUDIO_SAMPLE_RATE}`
+    // モーション動画に音声があるかチェック
+    const clipAudioChecks = await Promise.all(
+      options.clips.map((clip) => this.hasAudioStream(clip.path))
+    )
+    const hasMotionAudio = clipAudioChecks.some((has) => has)
+
+    // 一部のクリップにのみ音声がある場合、音声がないクリップに無音トラックを追加
+    // concat demuxer では全てのクリップに音声が必要
+    let effectiveClips = options.clips
+    if (hasMotionAudio && !clipAudioChecks.every((has) => has)) {
+      effectiveClips = await Promise.all(
+        options.clips.map(async (clip, index) => {
+          if (clipAudioChecks[index]) {
+            return clip
+          }
+          // 音声がないクリップに無音トラックを追加
+          const withAudioPath = await this.ensureAudioTrack(clip.path, jobDir)
+          return { ...clip, path: withAudioPath }
+        })
       )
     }
 
-    args.push(
-      // モーションクリップ由来の音声ストリームは常に破棄し、TTS/無音音声を唯一の音源として多重化する。
-      '-map',
-      '0:v:0',
-      '-map',
-      '1:a:0',
-      '-c:v',
-      'copy',
-      '-c:a',
-      'aac',
-      '-ar',
-      AUDIO_SAMPLE_RATE.toString(),
-      '-ac',
-      AUDIO_CHANNEL_COUNT.toString(),
-      '-shortest'
-    )
-    if (!options.audioPath) {
-      args.push('-t', targetSeconds.toString())
+    const concatBody = effectiveClips.map((clip) => `file '${escapeSingleQuotes(clip.path)}'`).join('\n')
+    await fs.writeFile(concatPath, concatBody, 'utf8')
+
+    const args = ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', concatPath]
+
+    if (options.audioPath) {
+      args.push('-i', options.audioPath)
     }
+
+    // 各パターンに応じた入力・フィルター・マッピングを設定
+    let useShortest = false
+    let explicitDuration: string | null = null
+
+    if (hasMotionAudio && options.audioPath) {
+      // モーション音声とTTS音声の両方がある場合: amix でミックス
+      const amixFilter = '[0:a][1:a]amix=inputs=2:duration=longest:normalize=0[aout]'
+      args.push('-filter_complex', amixFilter, '-map', '0:v:0', '-map', '[aout]')
+      useShortest = true
+    } else if (options.audioPath) {
+      // TTS音声のみ（モーション音声なし）
+      args.push('-map', '0:v:0', '-map', '1:a:0')
+      useShortest = true
+    } else if (hasMotionAudio) {
+      // モーション音声のみ（TTS音声なし）
+      args.push('-map', '0:v:0', '-map', '0:a:0')
+      explicitDuration = targetSeconds.toString()
+    } else {
+      // 音声なし: 無音音声を生成
+      args.push(
+        '-f', 'lavfi', '-t', targetSeconds.toString(), '-i',
+        `anullsrc=channel_layout=${AUDIO_CHANNEL_LAYOUT}:sample_rate=${AUDIO_SAMPLE_RATE}`,
+        '-map', '0:v:0', '-map', '1:a:0'
+      )
+      explicitDuration = targetSeconds.toString()
+    }
+
+    // 共通のエンコード設定
+    args.push(
+      '-c:v', 'copy',
+      '-c:a', 'aac',
+      '-ar', AUDIO_SAMPLE_RATE.toString(),
+      '-ac', AUDIO_CHANNEL_COUNT.toString()
+    )
+
+    // 終了条件
+    if (useShortest) {
+      args.push('-shortest')
+    }
+    if (explicitDuration) {
+      args.push('-t', explicitDuration)
+    }
+
     args.push(outputPath)
 
     await runCommand('ffmpeg', args)
@@ -437,6 +475,46 @@ export class MediaPipeline {
       'pcm_s16le',
       outputPath,
     ])
+    return outputPath
+  }
+
+  /**
+   * 複数の音声ファイルをミックス（重ね合わせ）する。
+   * normalize=0 で各音声の元の音量を維持したまま合成する。
+   */
+  async mixAudioFiles(filePaths: string[], durationMs: number, jobDir?: string): Promise<string> {
+    if (!filePaths.length) {
+      throw new Error('ミックス対象の音声がありません')
+    }
+    if (filePaths.length === 1) {
+      return filePaths[0]
+    }
+    const dir = jobDir ?? (await this.createJobDir())
+    const outputPath = path.join(dir, `audio-mix-${randomUUID()}.wav`)
+    const args = ['-y', '-hide_banner', '-loglevel', 'error']
+
+    for (const file of filePaths) {
+      args.push('-i', file)
+    }
+
+    // amix フィルターで音声をミックス（normalize=0 で元の音量を維持）
+    const amixFilter = `amix=inputs=${filePaths.length}:duration=longest:normalize=0`
+
+    args.push(
+      '-filter_complex',
+      amixFilter,
+      '-t',
+      toSeconds(durationMs),
+      '-ac',
+      AUDIO_CHANNEL_COUNT.toString(),
+      '-ar',
+      AUDIO_SAMPLE_RATE.toString(),
+      '-c:a',
+      'pcm_s16le',
+      outputPath
+    )
+
+    await runCommand('ffmpeg', args)
     return outputPath
   }
 

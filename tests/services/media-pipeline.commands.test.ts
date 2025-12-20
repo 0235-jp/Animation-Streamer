@@ -31,6 +31,13 @@ describe('MediaPipeline command building', () => {
   })
 
   it('invokes ffmpeg concat with silent audio when no audio track is provided', async () => {
+    // hasAudioStream が false を返すようにモック（モーション動画に音声なし）
+    runCommandWithOutputMock.mockImplementation(async (_cmd, args) => {
+      if (args.includes('-select_streams') && args.includes('a')) {
+        return '' // 音声ストリームなし
+      }
+      return '1.0'
+    })
     const pipeline = new MediaPipeline(tempDir)
     await pipeline.compose({
       clips: [{ id: 'c1', path: '/tmp/clip1.mp4', durationMs: 500 }],
@@ -47,7 +54,14 @@ describe('MediaPipeline command building', () => {
     expect(args).toContain('1:a:0')
   })
 
-  it('passes audio input when audioPath is provided to compose', async () => {
+  it('passes audio input when audioPath is provided to compose (no motion audio)', async () => {
+    // hasAudioStream が false を返すようにモック（モーション動画に音声なし）
+    runCommandWithOutputMock.mockImplementation(async (_cmd, args) => {
+      if (args.includes('-select_streams') && args.includes('a')) {
+        return '' // 音声ストリームなし
+      }
+      return '1.0'
+    })
     const pipeline = new MediaPipeline(tempDir)
     await pipeline.compose({
       clips: [{ id: 'c1', path: '/tmp/clip1.mp4', durationMs: 500 }],
@@ -61,6 +75,33 @@ describe('MediaPipeline command building', () => {
     expect(args).toContain('-map')
     expect(args).toContain('0:v:0')
     expect(args).toContain('1:a:0')
+  })
+
+  it('mixes motion audio with provided audio when both are available', async () => {
+    // hasAudioStream が true を返すようにモック（モーション動画に音声あり）
+    runCommandWithOutputMock.mockImplementation(async (_cmd, args) => {
+      if (args.includes('-select_streams') && args.includes('a')) {
+        return '0' // 音声ストリームあり
+      }
+      return '1.0'
+    })
+    const pipeline = new MediaPipeline(tempDir)
+    await pipeline.compose({
+      clips: [{ id: 'c1', path: '/tmp/clip1.mp4', durationMs: 500 }],
+      durationMs: 1000,
+      audioPath: '/tmp/audio.wav',
+    })
+
+    const args = runCommandMock.mock.calls.at(-1)?.[1] ?? []
+    expect(args).toContain('/tmp/audio.wav')
+    expect(args).toContain('-filter_complex')
+    // amix フィルターが使われていることを確認
+    const filterIndex = args.indexOf('-filter_complex')
+    expect(filterIndex).toBeGreaterThan(-1)
+    const filterArg = args[filterIndex + 1]
+    expect(filterArg).toContain('amix=inputs=2')
+    expect(filterArg).toContain('normalize=0')
+    expect(args).toContain('[aout]')
   })
 
   it('returns cached duration when concatenating a single audio file', async () => {

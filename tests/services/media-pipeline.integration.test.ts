@@ -29,7 +29,7 @@ describe('MediaPipeline compose integration', () => {
     await fs.rm(tempDir, { recursive: true, force: true })
   })
 
-  it('replaces embedded motion audio with the provided track', async () => {
+  it('mixes embedded motion audio with the provided track', async () => {
     if (!hasFfmpeg) {
       console.warn('Skipping MediaPipeline compose integration test because ffmpeg is not available')
       return
@@ -44,8 +44,10 @@ describe('MediaPipeline compose integration', () => {
         jobDir,
       })
 
+      // モーション音声と無音音声がミックスされるので、
+      // モーション音声が残っている（-80dBより大きい）ことを確認
       const maxVolume = await measureMaxVolumeDb(outputPath)
-      expect(maxVolume).toBeLessThanOrEqual(-80)
+      expect(maxVolume).toBeGreaterThan(-80)
     } finally {
       await pipeline.removeJobDir(jobDir)
     }
