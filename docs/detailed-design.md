@@ -250,8 +250,12 @@ animation-streamer/
   - VOICEVOX呼び出しは `VoicevoxClient` が担い、`MediaPipeline` は受け取ったWAVを正規化・加工する役割に専念する。
   - `normalizeAudio(input)`：48kHz / stereo / `pcm_s16le` へ変換し、以降の処理を同一フォーマットに統一。
   - `trimAudioSilence(input, {levelDb})`：`silenceremove → areverse → silenceremove → areverse` の2段構成で、先頭・末尾の無音を独立して削除する。デフォルトでは -70dB 未満を無音とみなし、発話中のポーズは残る。戻り値はトリミング済みファイルパス。
-  - `compose(clips, audioPath | null, durationMs)`：`clips` から `concat` ファイルを生成し、必要数だけ `ffmpeg -stream_loop` or 事前コピーで並べる。映像は `-c:v copy` で元素材のエンコード/解像度を維持し、音声が無い場合は `anullsrc` を入力に追加してAACトラックを生成。音声がある場合は、トリミング済み音声（＋必要なサイレントパディング、またはアクション動画から抽出したBGM）を入力に使う。
-    - モーション動画に残っている音声ストリームは `-map 0:v:0 -map 1:a:0` で強制的に破棄し、`compose` に渡した音声入力（VOICEVOX / 無音WAV / アクション用に抽出した音声）のみを最終MP4へ多重化する。したがって `presets[].speechMotions` / `presets[].idleMotions` / `presets[].speechTransitions` に音声トラックが残っていても出力へ混入しない一方、カスタムアクションは事前に抽出した音声がそのまま利用される。
+  - `compose(clips, audioPath | null, durationMs)`：`clips` から `concat` ファイルを生成し、必要数だけ `ffmpeg -stream_loop` or 事前コピーで並べる。映像は `-c:v copy` で元素材のエンコード/解像度を維持し、音声は以下の4パターンで処理する：
+    - **モーション音声あり + audioPath あり**: `amix` フィルター（`normalize=0`）でモーション動画の音声と TTS/指定音声をミックスする。両方の音声は元の音量のまま重ね合わされる。
+    - **モーション音声なし + audioPath あり**: 指定された音声（TTS / 抽出音声）のみを使用。
+    - **モーション音声あり + audioPath なし**: モーション動画の音声をそのまま使用。
+    - **モーション音声なし + audioPath なし**: `anullsrc` で無音AACトラックを生成。
+    - これにより `presets[].speechMotions` / `presets[].idleMotions` / `presets[].speechTransitions` に音声トラック（BGM・効果音など）が含まれている場合、TTS音声とミックスされて出力される。
   - 合成ファイルはジョブディレクトリ内に MP4 で書き出し、`GenerationService` が固定の `output/` へ移動してクライアントへ絶対パスを返す。映像コーデックは素材準拠（`copy`）で、音声のみAACへ揃える。`RESPONSE_PATH_BASE` が設定されている場合はここでホスト側のパスへ書き換える。
   - 生成中の一時ファイルは `CleanupService` に登録しておき、成功/失敗に関わらず削除。
 - ストリーム配信用の `createIdleProcess` / `createSpeechProcess` も将来ここにまとめるが、現段階では `generate` 用 `compose` が中心。
