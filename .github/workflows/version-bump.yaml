@@ -1,0 +1,66 @@
+name: Version Bump
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'バージョンタイプ'
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      base_branch:
+        description: 'PRのマージ先ブランチ'
+        required: true
+        default: 'develop'
+        type: string
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.base_branch }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        id: bump
+        run: |
+          NEW_VERSION=$(npm version ${{ inputs.version_type }} --no-git-tag-version)
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create branch and push
+        run: |
+          BRANCH_NAME="release/${{ steps.bump.outputs.new_version }}"
+          git checkout -b "$BRANCH_NAME"
+          git add package.json package-lock.json
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.new_version }}"
+          git push origin "$BRANCH_NAME"
+
+      - name: Create Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --base ${{ inputs.base_branch }} \
+            --head "release/${{ steps.bump.outputs.new_version }}" \
+            --title "chore: update version to ${{ steps.bump.outputs.new_version }}" \
+            --body "## Summary
+          - Update version to ${{ steps.bump.outputs.new_version }}"
