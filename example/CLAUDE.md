@@ -4,7 +4,7 @@
 
 ## ディレクトリ構成
 
-```
+```text
 example/
 ├── client/    # TypeScript クライアントライブラリ例
 ├── motions/   # サンプルモーション動画素材

@@ -4,7 +4,7 @@
 
 ## ディレクトリ構成
 
-```
+```text
 src/
 ├── api/       # REST API 層 (コントローラー、スキーマ)
 ├── config/    # 設定ファイルのローダーとスキーマ定義
@@ -23,7 +23,7 @@ src/
 
 ## アーキテクチャ
 
-```
+```text
 [API Layer] → [Services Layer] → [Infra Layer]
      ↓              ↓
  [Config]       [Utils]
