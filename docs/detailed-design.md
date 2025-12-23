@@ -641,7 +641,155 @@ cache = true ?
 - **設定変更時**: preset の設定（モーションファイルなど）を変更した場合、古いキャッシュが使われる可能性がある。ユーザーが適宜キャッシュを削除する運用を想定。
 - **`/api/stream` への影響なし**: `/api/stream` 経由のファイル生成（`forStreamPipeline: true`）はキャッシュ機能の対象外。ファイル名も従来通りランダムUUIDを使用し、`output/stream/` への保存と自動削除の仕様は変更しない。
 
-## 13. 未実装項目 / TODO
+## 13. リップシンク機能（speakLipSync）
+
+### 13.1 概要
+
+音素レベルで同期したリップシンク動画を生成するアクション。口の形の画像（PNG）を音声に合わせて切り替えることで、より自然なリップシンクを実現する。
+
+### 13.2 既存speakとの違い
+
+| 項目 | speak（既存） | speakLipSync |
+|------|--------------|--------------|
+| 素材 | モーション動画（mp4） | 全身画像（png）× 7枚/emotion |
+| 口の動き | 動画に含まれる（固定） | 音声に合わせて画像切り替え |
+| 同期精度 | 音声の長さのみ | 音素レベルで同期 |
+| TTS対応 | VOICEVOX / Style-Bert-VITS2 | VOICEVOX / Style-Bert-VITS2 |
+
+### 13.3 対応範囲
+
+| 入力 | TTS | タイムライン生成 |
+|------|-----|-----------------|
+| text | VOICEVOX | audio_query（高精度） |
+| text | Style-Bert-VITS2 | MFCC 音声解析 |
+| audio + transcribe: true | VOICEVOX | audio_query（高精度） |
+| audio + transcribe: true | Style-Bert-VITS2 | MFCC 音声解析 |
+| audio + transcribe: false | - | MFCC 音声解析 |
+
+**タイムライン生成方式:**
+- **VOICEVOX**: `audio_query` APIからモーラ情報を取得し、子音・母音レベルで正確なタイミングを生成
+- **Style-Bert-VITS2 / 直接音声**: MFCC（メル周波数ケプストラム係数）で音声ファイルを解析（[LipWI2VJs](https://github.com/M-gen/LipWI2VJs)ベース）
+
+### 13.4 ビゼム形状（aiueoN形式）
+
+日本語母音ベースのシンプルな6形状を採用。
+
+| 形状 | 説明 | VOICEVOXマッピング |
+|-----|------|-------------------|
+| **A** | 大きく開いた口 | 母音: あ(a) |
+| **I** | 横に広がった口 | 母音: い(i) |
+| **U** | すぼめた口 | 母音: う(u) |
+| **E** | 中間的に開いた口 | 母音: え(e) |
+| **O** | 丸く開いた口 | 母音: お(o) |
+| **N** | 閉じた口 | 母音: ん(N), 子音, 無音, ポーズ |
+
+### 13.5 設定構造
+
+```jsonc
+{
+  "presets": [{
+    "id": "anchor-a",
+    "audioProfile": { ... },
+    "lipSync": [
+      {
+        "id": "lip-neutral",
+        "emotion": "neutral",
+        "images": {
+          "A": "lip/neutral_A.png",
+          "I": "lip/neutral_I.png",
+          "U": "lip/neutral_U.png",
+          "E": "lip/neutral_E.png",
+          "O": "lip/neutral_O.png",
+          "N": "lip/neutral_N.png"
+        }
+      }
+    ]
+  }]
+}
+```
+
+### 13.6 処理フロー
+
+```
+speakLipSync
+     │
+     ▼
+lipSync設定チェック
+     │
+     ├─ VOICEVOX ─────────────────────────────┐
+     │                                        │
+     │  text/audio+transcribe                 │
+     │         │                              │
+     │         ▼                              │
+     │  audio_query → モーラ情報               │
+     │         │                              │
+     │         ▼                              │
+     │  synthesis → 音声                       │
+     │         │                              │
+     │         ▼                              │
+     │  generateVisemeTimeline()              │
+     │                                        │
+     ├─ Style-Bert-VITS2 / 直接音声 ──────────┤
+     │                                        │
+     │  text → SBV2 synthesis → 音声          │
+     │  or                                    │
+     │  audio（直接使用）                      │
+     │         │                              │
+     │         ▼                              │
+     │  MFCC解析 → タイムライン                 │
+     │                                        │
+     └────────────────┬───────────────────────┘
+                      ▼
+          emotion → lipSync画像セット選択
+                      │
+                      ▼
+          composeLipSyncVideo()
+          (ffmpeg: 画像切り替え + 音声)
+                      │
+                      ▼
+                  出力MP4
+```
+
+### 13.7 MFCC 音声解析
+
+Style-Bert-VITS2や直接音声使用時にビゼムタイムラインを生成するため、MFCCベースの音声解析を実装。
+[LipWI2VJs](https://github.com/M-gen/LipWI2VJs) / [wLipSync](https://github.com/mrxz/wLipSync) の手法を採用。
+
+**使用方法:**
+```typescript
+import { getMfccProvider } from './services/lip-sync'
+
+const provider = getMfccProvider()
+const timeline = await provider.generateTimeline('/path/to/audio.wav')
+// => [{ viseme: 'A', startMs: 0, endMs: 150 }, ...]
+```
+
+### 13.8 実装対象ファイル
+
+| ファイル | 変更内容 |
+|---------|---------|
+| `src/config/schema.ts` | lipSyncスキーマ（aiueoN形式） |
+| `src/config/loader.ts` | ResolvedLipSyncImages型（6形状） |
+| `src/types/generate.ts` | VisemeType（A,I,U,E,O,N）, VisemeSegment |
+| `src/services/voicevox.ts` | synthesizeWithQuery（モーラ情報返却） |
+| `src/services/generation.service.ts` | speakLipSyncアクション |
+| `src/services/lip-sync/types.ts` | LipSyncProvider, MfccProfile型 |
+| `src/services/lip-sync/timeline-generator.ts` | VOICEVOX用タイムライン生成 |
+| `src/services/lip-sync/mfcc-provider.ts` | MFCC音声解析 |
+| `src/services/lip-sync/profile.json` | MFCCキャリブレーションデータ |
+| `src/services/lip-sync/video-composer.ts` | 画像→動画合成 |
+
+### 13.9 注意事項
+
+| 項目 | 内容 |
+|------|------|
+| TTS対応 | VOICEVOX / Style-Bert-VITS2 両対応 |
+| 音声直接使用 | `transcribe: false` も MFCC で対応 |
+| STT設定 | `audio + transcribe: true` 使用時は必須 |
+| emotion | lipSync配列に該当がない場合は `neutral` にフォールバック |
+| lipSync設定 | 未設定の場合はエラー |
+
+## 14. 未実装項目 / TODO
 - `text` / `generate` エンドポイント内部のTTS呼び出し、音声合成、ストリーム割込み／MP4出力処理。
 - 音声/動画素材の正当性チェック、自動ダウンロード機構。
 - 簡易認証(APIキー)とTLS化。

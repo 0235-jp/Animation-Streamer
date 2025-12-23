@@ -37,13 +37,12 @@ export interface ResolvedTransitionMotion {
 }
 
 export interface ResolvedLipSyncImages {
-  a: string
-  i: string
-  u: string
-  e: string
-  o: string
-  N: string
-  closed: string
+  A: string // あ - 大きく開いた口
+  I: string // い - 横に広がった口
+  U: string // う - すぼめた口
+  E: string // え - 中間的に開いた口
+  O: string // お - 丸く開いた口
+  N: string // ん/無音 - 閉じた口
 }
 
 export interface ResolvedLipSyncVariant {
@@ -250,18 +249,17 @@ const resolvePreset = (
   const audioProfile = resolveAudioProfile(preset.audioProfile, normalizeVoiceEmotion)
   const actionsMap = new Map(actions.map((action) => [action.id.toLowerCase(), action]))
 
-  // lipSync設定の解決
+  // lipSync設定の解決（aiueoN形式 - 日本語母音ベース）
   const lipSync = preset.lipSync?.map((variant) => ({
     id: variant.id,
     emotion: variant.emotion.toLowerCase(),
     images: {
-      a: resolveMotionPath(variant.images.a),
-      i: resolveMotionPath(variant.images.i),
-      u: resolveMotionPath(variant.images.u),
-      e: resolveMotionPath(variant.images.e),
-      o: resolveMotionPath(variant.images.o),
+      A: resolveMotionPath(variant.images.A),
+      I: resolveMotionPath(variant.images.I),
+      U: resolveMotionPath(variant.images.U),
+      E: resolveMotionPath(variant.images.E),
+      O: resolveMotionPath(variant.images.O),
       N: resolveMotionPath(variant.images.N),
-      closed: resolveMotionPath(variant.images.closed),
     },
   }))
 

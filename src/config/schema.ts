@@ -82,15 +82,14 @@ export const audioProfileSchema = z.discriminatedUnion('ttsEngine', [
   sbv2AudioProfileSchema,
 ])
 
-// リップシンク用画像セットスキーマ
+// リップシンク用画像セットスキーマ（aiueoN形式 - 日本語母音ベース）
 const lipSyncImagesSchema = z.object({
-  a: z.string().min(1), // あ
-  i: z.string().min(1), // い
-  u: z.string().min(1), // う
-  e: z.string().min(1), // え
-  o: z.string().min(1), // お
-  N: z.string().min(1), // ん
-  closed: z.string().min(1), // 閉じ
+  A: z.string().min(1), // あ - 大きく開いた口
+  I: z.string().min(1), // い - 横に広がった口
+  U: z.string().min(1), // う - すぼめた口
+  E: z.string().min(1), // え - 中間的に開いた口
+  O: z.string().min(1), // お - 丸く開いた口
+  N: z.string().min(1), // ん/無音 - 閉じた口
 })
 
 const lipSyncVariantSchema = z.object({

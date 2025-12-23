@@ -157,6 +157,7 @@ async function createSegmentVideo(
 
 /**
  * ビゼムタイプから対応する画像パスを取得
+ * aiueoN形式（A, I, U, E, O, N）
  */
 function getImagePath(images: ResolvedLipSyncImages, viseme: VisemeType): string {
   return images[viseme]

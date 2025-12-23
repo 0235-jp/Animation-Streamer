@@ -71,7 +71,21 @@
             "styleWeight": 1.2
           }
         ]
-      }
+      },
+      "lipSync": [
+        {
+          "id": "lip-neutral",
+          "emotion": "neutral",
+          "images": {
+            "A": "lip/neutral_A.png",
+            "I": "lip/neutral_I.png",
+            "U": "lip/neutral_U.png",
+            "E": "lip/neutral_E.png",
+            "O": "lip/neutral_O.png",
+            "N": "lip/neutral_N.png"
+          }
+        }
+      ]
     }
   ]
 }

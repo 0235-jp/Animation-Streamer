@@ -103,9 +103,16 @@ export interface VoicevoxAudioQueryResponse {
 }
 
 /**
- * ビゼムタイプ
+ * ビゼムタイプ（aiueoN形式 - 日本語母音ベース）
+ *
+ * A: あ - 大きく開いた口
+ * I: い - 横に広がった口
+ * U: う - すぼめた口
+ * E: え - 中間的に開いた口
+ * O: お - 丸く開いた口
+ * N: ん/無音 - 閉じた口
  */
-export type VisemeType = 'a' | 'i' | 'u' | 'e' | 'o' | 'N' | 'closed'
+export type VisemeType = 'A' | 'I' | 'U' | 'E' | 'O' | 'N'
 
 /**
  * ビゼムセグメント（タイムライン上の1区間）

@@ -179,12 +179,12 @@ OBS のメディアソースに `rtmp://localhost:1935/live/main` を指定し�
 |------|--------------|---------------------|
 | 素材 | モーション動画（mp4） | 全身画像（png）× 7枚/emotion |
 | 口の動き | 動画に含まれる（固定） | 音声に合わせて画像切り替え |
-| 同期精度 | 音声の長さのみ | 音素レベルで同期 |
+| 同期精度 | 音声の長さのみ | 音素レベルで同期（子音・母音を別々に処理） |
 | TTS対応 | VOICEVOX / Style-Bert-VITS2 | VOICEVOX のみ |
 
 ### 設定
 
-プリセットに `lipSync` 配列を追加し、emotion ごとに7種類の口形画像を指定します。
+プリセットに `lipSync` 配列を追加し、emotion ごとに aiueoN 形式の口形画像を指定します。
 
 ```json
 {
@@ -200,13 +200,12 @@ OBS のメディアソースに `rtmp://localhost:1935/live/main` を指定し�
         "id": "lip-neutral",
         "emotion": "neutral",
         "images": {
-          "a": "lip/neutral_a.png",
-          "i": "lip/neutral_i.png",
-          "u": "lip/neutral_u.png",
-          "e": "lip/neutral_e.png",
-          "o": "lip/neutral_o.png",
-          "N": "lip/neutral_n.png",
-          "closed": "lip/neutral_closed.png"
+          "A": "lip/neutral_A.png",
+          "I": "lip/neutral_I.png",
+          "U": "lip/neutral_U.png",
+          "E": "lip/neutral_E.png",
+          "O": "lip/neutral_O.png",
+          "N": "lip/neutral_N.png"
         }
       }
     ]
@@ -214,12 +213,15 @@ OBS のメディアソースに `rtmp://localhost:1935/live/main` を指定し�
 }
 ```
 
-**images のキー:**
-- `a`, `i`, `u`, `e`, `o`: 母音の口形
-- `N`: 「ん」の口形
-- `closed`: 閉じた口（促音・ポーズ時）
+**images のキー（aiueoN 形式 - 日本語母音ベース）:**
+- `A`: あ - 大きく開いた口
+- `I`: い - 横に広がった口
+- `U`: う - すぼめた口
+- `E`: え - 中間的に開いた口
+- `O`: お - 丸く開いた口
+- `N`: ん/無音 - 閉じた口
 
-画像は `motions/` ディレクトリ配下に配置します（例: `motions/lip/neutral_a.png`）。
+画像は `motions/` ディレクトリ配下に配置します（例: `motions/lip/neutral_A.png`）。
 
 ### API 例
 
@@ -245,10 +247,16 @@ curl -X POST http://localhost:4000/api/generate \
   }'
 ```
 
+### 対応 TTS エンジン
+
+| TTS エンジン | タイムライン生成方式 |
+|-------------|-------------------|
+| VOICEVOX | audio_query のモーラ情報（高精度） |
+| Style-Bert-VITS2 | MFCC 音声解析 |
+| 直接音声使用 | MFCC 音声解析 |
+
 ### 制限事項
 
-- **VOICEVOX 専用**: Style-Bert-VITS2 では使用不可（モーラタイミング情報が取得できないため）
-- **transcribe: true 必須**: 音声入力時は `transcribe: true` が必要（直接音声使用は不可）
 - **lipSync 設定必須**: プリセットに `lipSync` 配列がない場合はエラー
 
 ## 音声入力 (STT)
@@ -429,3 +437,9 @@ ffmpeg -i "talk_large.mp4" -vf "scale=896:1152,fps=16" -c:v libx264 -pix_fmt yuv
 ```
 
 多数決で推奨基準が決定され、変換が必要なファイルのコマンドが自動生成されます。
+
+## Acknowledgements
+
+- [LipWI2VJs](https://github.com/M-gen/LipWI2VJs) - MFCCベースの音声リップシンク解析
+- [wLipSync](https://github.com/mrxz/wLipSync) - MFCCプロファイルデータ提供
+

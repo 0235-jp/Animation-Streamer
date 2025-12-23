@@ -17,7 +17,7 @@ import { VoicevoxClient, type VoicevoxVoiceOptions } from './voicevox'
 import { StyleBertVits2Client, type StyleBertVits2VoiceOptions } from './style-bert-vits2'
 import { STTClient } from './stt'
 import { CacheService, type SpeakCacheKeyData, type IdleCacheKeyData, type CombinedCacheKeyData, type SpeakInputType } from './cache.service'
-import { generateVisemeTimeline, composeLipSyncVideo } from './lip-sync'
+import { generateVisemeTimeline, composeLipSyncVideo, getMfccProvider } from './lip-sync'
 import type { ActionResult, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler, AudioInput, VoicevoxAudioQueryResponse } from '../types/generate'
 import { logger } from '../utils/logger'
 
@@ -353,30 +353,20 @@ export class GenerationService {
     const emotion = this.ensureOptionalString(params.emotion) ?? DEFAULT_EMOTION
     const audio = params.audio as AudioInput | undefined
 
-    // バリデーション: VOICEVOXのみ対応
+    // バリデーション: lipSync設定必須
     this.validateSpeakLipSyncRequest(preset, params, requestId)
 
     const jobDir = await this.mediaPipeline.createJobDir()
     try {
-      // テキストを取得（直接指定 or STT）
-      let text: string
-      if (audio) {
-        // 音声入力の場合はSTT
-        const audioFilePath = await this.resolveAudioFilePath(audio, jobDir, requestId)
-        text = await this.transcribeAudio(audioFilePath, requestId)
-        logger.info({ requestId, textLength: text.length }, 'Audio transcribed for lip sync')
-      } else {
-        text = this.ensureString(params.text, 'text', requestId)
-      }
-
-      // VOICEVOX TTS（audio_queryとモーラ情報付き）
-      const audioProfile = preset.audioProfile as ResolvedVoicevoxAudioProfile
-      const { voice, endpoint } = this.resolveVoicevoxVoiceProfile(audioProfile, emotion)
-      const audioPath = path.join(jobDir, `voice-${requestId}.wav`)
-      const { audioQuery } = await this.voicevox.synthesizeWithQuery(text, audioPath, voice, { endpoint })
-
-      // ビゼムタイムラインを生成
-      const timeline = generateVisemeTimeline(audioQuery)
+      // 音声ファイルパスとタイムラインを取得
+      const { audioPath, timeline } = await this.generateLipSyncAudioAndTimeline(
+        preset,
+        params,
+        audio,
+        emotion,
+        jobDir,
+        requestId
+      )
 
       // リップシンク画像セットを取得
       const lipSyncVariant = this.resolveLipSyncVariant(preset, emotion)
@@ -408,26 +398,83 @@ export class GenerationService {
     }
   }
 
+  /**
+   * リップシンク用の音声とタイムラインを生成
+   * - VOICEVOX: audio_queryからタイムライン生成
+   * - Style-Bert-VITS2 / 直接音声: MFCCでタイムライン生成
+   */
+  private async generateLipSyncAudioAndTimeline(
+    preset: ResolvedPreset,
+    params: Record<string, unknown>,
+    audio: AudioInput | undefined,
+    emotion: string,
+    jobDir: string,
+    requestId: string
+  ): Promise<{ audioPath: string; timeline: import('../types/generate').VisemeSegment[]; text?: string }> {
+    const audioProfile = preset.audioProfile
+
+    // パターン1: 直接音声使用（transcribe: false または未指定）
+    if (audio && audio.transcribe !== true) {
+      const audioFilePath = await this.resolveAudioFilePath(audio, jobDir, requestId)
+      logger.info({ requestId }, 'Using direct audio with MFCC lip sync')
+      const timeline = await getMfccProvider().generateTimeline(audioFilePath)
+      return { audioPath: audioFilePath, timeline, text: undefined }
+    }
+
+    // パターン2: 音声入力→STT→TTS
+    if (audio && audio.transcribe === true) {
+      const audioFilePath = await this.resolveAudioFilePath(audio, jobDir, requestId)
+      const text = await this.transcribeAudio(audioFilePath, requestId)
+      logger.info({ requestId, textLength: text.length }, 'Audio transcribed for lip sync')
+      const result = await this.synthesizeWithLipSync(audioProfile, text, emotion, jobDir, requestId)
+      return { ...result, text }
+    }
+
+    // パターン3: テキスト入力→TTS
+    const text = this.ensureString(params.text, 'text', requestId)
+    const result = await this.synthesizeWithLipSync(audioProfile, text, emotion, jobDir, requestId)
+    return { ...result, text }
+  }
+
+  /**
+   * TTSで音声合成し、リップシンクタイムラインを生成
+   */
+  private async synthesizeWithLipSync(
+    audioProfile: ResolvedPreset['audioProfile'],
+    text: string,
+    emotion: string,
+    jobDir: string,
+    requestId: string
+  ): Promise<{ audioPath: string; timeline: import('../types/generate').VisemeSegment[] }> {
+    const audioPath = path.join(jobDir, `voice-${requestId}.wav`)
+
+    if (audioProfile.ttsEngine === 'voicevox') {
+      // VOICEVOX: audio_queryからタイムライン生成（高精度）
+      const { voice, endpoint } = this.resolveVoicevoxVoiceProfile(audioProfile, emotion)
+      const { audioQuery } = await this.voicevox.synthesizeWithQuery(text, audioPath, voice, { endpoint })
+      const timeline = generateVisemeTimeline(audioQuery)
+      return { audioPath, timeline }
+    } else {
+      // Style-Bert-VITS2: MFCCでタイムライン生成
+      const { voice, endpoint } = this.resolveSbv2VoiceProfile(audioProfile, emotion)
+      await this.sbv2.synthesize(text, audioPath, voice, { endpoint })
+      logger.info({ requestId }, 'Using MFCC lip sync for Style-Bert-VITS2')
+      const timeline = await getMfccProvider().generateTimeline(audioPath)
+      return { audioPath, timeline }
+    }
+  }
+
   private validateSpeakLipSyncRequest(
     preset: ResolvedPreset,
     params: Record<string, unknown>,
     requestId: string
   ): void {
-    // 1. Style-Bert-VITS2は非対応
-    if (preset.audioProfile.ttsEngine === 'style-bert-vits2') {
-      throw new ActionProcessingError('speakLipSyncはVOICEVOXのみ対応しています', requestId)
-    }
-
-    // 2. 直接音声使用は非対応
-    const audio = params.audio as AudioInput | undefined
-    if (audio && audio.transcribe === false) {
-      throw new ActionProcessingError('speakLipSyncは直接音声使用（transcribe: false）に対応していません', requestId)
-    }
-
-    // 3. lipSync設定がない
+    // lipSync設定がない場合はエラー
     if (!preset.lipSync || preset.lipSync.length === 0) {
       throw new ActionProcessingError('lipSync設定がありません', requestId)
     }
+    // VOICEVOX / Style-Bert-VITS2 どちらも対応
+    // 直接音声使用（transcribe: false）も MFCC で対応可能
   }
 
   private resolveLipSyncVariant(preset: ResolvedPreset, emotion: string): ResolvedLipSyncVariant {
@@ -663,23 +710,16 @@ export class GenerationService {
     // バリデーション
     this.validateSpeakLipSyncRequest(preset, params, requestId)
 
-    // テキストを取得
-    let text: string
-    if (audio) {
-      const audioFilePath = await this.resolveAudioFilePath(audio, jobDir, requestId)
-      text = await this.transcribeAudio(audioFilePath, requestId)
-    } else {
-      text = this.ensureString(params.text, 'text', requestId)
-    }
+    // 音声とタイムラインを生成（TTS エンジンに応じて適切に処理）
+    const { audioPath, timeline, text } = await this.generateLipSyncAudioAndTimeline(
+      preset,
+      params,
+      audio,
+      emotion,
+      jobDir,
+      requestId
+    )
 
-    // VOICEVOX TTS（audio_queryとモーラ情報付き）
-    const audioProfile = preset.audioProfile as ResolvedVoicevoxAudioProfile
-    const { voice, endpoint } = this.resolveVoicevoxVoiceProfile(audioProfile, emotion)
-    const audioPath = path.join(jobDir, `voice-${requestId}.wav`)
-    const { audioQuery } = await this.voicevox.synthesizeWithQuery(text, audioPath, voice, { endpoint })
-
-    // ビゼムタイムラインを生成
-    const timeline = generateVisemeTimeline(audioQuery)
     const lipSyncVariant = this.resolveLipSyncVariant(preset, emotion)
 
     // リップシンク動画を合成
@@ -693,6 +733,16 @@ export class GenerationService {
     // 生成した動画から音声を抽出（連結用）
     const extractedAudioPath = await this.mediaPipeline.extractAudioTrack(videoPath, jobDir, `lipsync-audio-${requestId}`)
 
+    // inputType を決定
+    let inputType: SpeakInputType
+    if (!audio) {
+      inputType = 'text'
+    } else if (audio.transcribe === true) {
+      inputType = 'audio_transcribe'
+    } else {
+      inputType = 'audio'
+    }
+
     // PlannedActionとして返す（生成した動画を1つのclipとして扱う）
     return {
       id: requestId,
@@ -702,7 +752,7 @@ export class GenerationService {
       durationMs,
       audioPath: extractedAudioPath,
       text,
-      inputType: audio ? 'audio_transcribe' : 'text',
+      inputType,
     }
   }
 
