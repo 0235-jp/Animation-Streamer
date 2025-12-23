@@ -21,7 +21,7 @@ Animation Streamer API を呼び出す TypeScript クライアントの実装例
 
 サンプルモーション動画素材（MP4）。
 - セットアップ時に `motions/` ディレクトリにコピーして使用
-- `cp example/motion/* motions/`
+- `cp example/motions/* motions/`
 
 ## voice/
 
