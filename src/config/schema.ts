@@ -92,10 +92,21 @@ const lipSyncImagesSchema = z.object({
   N: z.string().min(1), // ん/無音 - 閉じた口
 })
 
+// 口画像オーバーレイ設定スキーマ
+const mouthOverlayConfigSchema = z.object({
+  scale: z.number().positive().default(1.0), // 口画像のスケール倍率
+  offsetX: z.number().default(0), // X軸オフセット（ピクセル）
+  offsetY: z.number().default(0), // Y軸オフセット（ピクセル）
+})
+
 const lipSyncVariantSchema = z.object({
   id: z.string().min(1),
   emotion: z.string().min(1).default('neutral'),
   images: lipSyncImagesSchema,
+  // オーバーレイ合成用の設定
+  basePath: z.string().min(1), // ベース動画パス（ループ動画）
+  mouthDataPath: z.string().min(1), // 口位置JSONパス（Python出力）
+  overlayConfig: mouthOverlayConfigSchema.optional(),
 })
 
 // STT設定スキーマ（トップレベル）- OpenAI互換API

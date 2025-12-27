@@ -17,7 +17,7 @@ import { VoicevoxClient, type VoicevoxVoiceOptions } from './voicevox'
 import { StyleBertVits2Client, type StyleBertVits2VoiceOptions } from './style-bert-vits2'
 import { STTClient } from './stt'
 import { CacheService, type SpeakCacheKeyData, type IdleCacheKeyData, type CombinedCacheKeyData, type SpeakInputType } from './cache.service'
-import { generateVisemeTimeline, composeLipSyncVideo, getMfccProvider } from './lip-sync'
+import { generateVisemeTimeline, getMfccProvider, composeOverlayLipSyncVideo, loadMouthPositionData } from './lip-sync'
 import type { ActionResult, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler, AudioInput, VoicevoxAudioQueryResponse } from '../types/generate'
 import { logger } from '../utils/logger'
 
@@ -368,15 +368,25 @@ export class GenerationService {
         requestId
       )
 
-      // リップシンク画像セットを取得
+      // リップシンク設定を取得（オーバーレイ合成用）
       const lipSyncVariant = this.resolveLipSyncVariant(preset, emotion)
 
-      // リップシンク動画を合成
-      const { outputPath, durationMs } = await composeLipSyncVideo({
+      // 口位置データを読み込み
+      const mouthData = await loadMouthPositionData(lipSyncVariant.mouthDataPath)
+      logger.info(
+        { requestId, mouthDataFile: lipSyncVariant.mouthDataPath, frames: mouthData.totalFrames },
+        'Loaded mouth position data'
+      )
+
+      // オーバーレイ合成でリップシンク動画を生成
+      const { outputPath, durationMs } = await composeOverlayLipSyncVideo({
         timeline,
         images: lipSyncVariant.images,
+        baseVideoPath: lipSyncVariant.basePath,
+        mouthData,
         audioPath,
         jobDir,
+        overlayConfig: lipSyncVariant.overlayConfig,
       })
 
       // ファイル名を決定
@@ -385,7 +395,7 @@ export class GenerationService {
         : `speaklipsync-${randomUUID()}`
       const finalPath = await this.moveToOutput(outputPath, baseName, forStream)
 
-      logger.info({ requestId, durationMs, timelineSegments: timeline.length }, 'Lip sync video generated')
+      logger.info({ requestId, durationMs, timelineSegments: timeline.length }, 'Lip sync overlay video generated')
 
       return {
         id: requestId,
@@ -722,12 +732,18 @@ export class GenerationService {
 
     const lipSyncVariant = this.resolveLipSyncVariant(preset, emotion)
 
-    // リップシンク動画を合成
-    const { outputPath: videoPath, durationMs } = await composeLipSyncVideo({
+    // 口位置データを読み込み
+    const mouthData = await loadMouthPositionData(lipSyncVariant.mouthDataPath)
+
+    // オーバーレイ合成でリップシンク動画を生成
+    const { outputPath: videoPath, durationMs } = await composeOverlayLipSyncVideo({
       timeline,
       images: lipSyncVariant.images,
+      baseVideoPath: lipSyncVariant.basePath,
+      mouthData,
       audioPath,
       jobDir,
+      overlayConfig: lipSyncVariant.overlayConfig,
     })
 
     // 生成した動画から音声を抽出（連結用）

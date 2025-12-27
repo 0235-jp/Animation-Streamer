@@ -1,5 +1,7 @@
 export { generateVisemeTimeline, getTimelineDurationMs } from './timeline-generator'
 export { composeLipSyncVideo, getImageDimensions } from './video-composer'
 export type { LipSyncComposeOptions, LipSyncComposeResult } from './video-composer'
+export { composeOverlayLipSyncVideo, loadMouthPositionData } from './overlay-composer'
+export type { OverlayComposeOptions, OverlayComposeResult } from './overlay-composer'
 export { MfccProvider, getMfccProvider } from './mfcc-provider'
-export type { LipSyncProvider, MfccAnalysisResult, MfccFrame } from './types'
+export type { LipSyncProvider, MfccAnalysisResult, MfccFrame, MouthPosition, MouthPositionData, MouthOverlayConfig } from './types'

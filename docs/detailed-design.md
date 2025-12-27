@@ -645,16 +645,21 @@ cache = true ?
 
 ### 13.1 概要
 
-音素レベルで同期したリップシンク動画を生成するアクション。口の形の画像（PNG）を音声に合わせて切り替えることで、より自然なリップシンクを実現する。
+音素レベルで同期したリップシンク動画を生成するアクション。ベースとなるループ動画に対して、口の形の画像（PNG）を音声に合わせてオーバーレイ合成することで、より自然なリップシンクを実現する。
+
+**2段階のワークフロー:**
+1. **事前処理（Python）**: ベース動画から口位置を検出しJSONファイルを出力
+2. **動画生成（TypeScript）**: 口位置JSONを読み込み、FFmpegでオーバーレイ合成
 
 ### 13.2 既存speakとの違い
 
 | 項目 | speak（既存） | speakLipSync |
 |------|--------------|--------------|
-| 素材 | モーション動画（mp4） | 全身画像（png）× 7枚/emotion |
-| 口の動き | 動画に含まれる（固定） | 音声に合わせて画像切り替え |
+| 素材 | モーション動画（mp4） | ベースループ動画 + 口画像（png）× 6枚/emotion |
+| 口の動き | 動画に含まれる（固定） | 音声に合わせて口画像をオーバーレイ |
 | 同期精度 | 音声の長さのみ | 音素レベルで同期 |
 | TTS対応 | VOICEVOX / Style-Bert-VITS2 | VOICEVOX / Style-Bert-VITS2 |
+| 事前処理 | 不要 | 口位置検出が必要（Python） |
 
 ### 13.3 対応範囲
 
@@ -683,7 +688,67 @@ cache = true ?
 | **O** | 丸く開いた口 | 母音: お(o) |
 | **N** | 閉じた口 | 母音: ん(N), 子音, 無音, ポーズ |
 
-### 13.5 設定構造
+### 13.5 口位置検出（Python事前処理）
+
+#### 13.5.1 概要
+
+MotionPNGTuberと同じライブラリ（anime-face-detector, mmpose）を使用したPythonスクリプトで、ベース動画から各フレームの口位置を検出しJSONファイルとして出力する。
+
+#### 13.5.2 使用方法
+
+```bash
+# Python環境のセットアップ
+python -m venv venv
+source venv/bin/activate
+pip install openmim
+mim install mmcv-full==1.7.0
+pip install -r scripts/requirements.txt
+
+# 口位置検出の実行
+python scripts/detect_mouth_positions.py \
+  --input motions/talk_loop.mp4 \
+  --output motions/talk_loop.mouth.json
+```
+
+#### 13.5.3 出力形式（MouthPositionData）
+
+```json
+{
+  "videoFileName": "talk_loop.mp4",
+  "videoWidth": 896,
+  "videoHeight": 1152,
+  "frameRate": 16,
+  "totalFrames": 48,
+  "durationSeconds": 3.0,
+  "positions": [
+    {
+      "frameIndex": 0,
+      "timeSeconds": 0.0,
+      "centerX": 448,
+      "centerY": 720,
+      "width": 120,
+      "height": 60,
+      "confidence": 0.95
+    }
+  ],
+  "createdAt": "2025-12-28T10:00:00.000Z"
+}
+```
+
+#### 13.5.4 使用ライブラリ
+
+| ライブラリ | バージョン | 用途 |
+|-----------|----------|------|
+| anime-face-detector | 0.0.9 | アニメ顔検出（28点ランドマーク） |
+| mmdet | 2.28.0 | オブジェクト検出 |
+| mmpose | 0.29.0 | ランドマーク検出 |
+| mmcv-full | 1.7.0 | CV基盤 |
+| opencv-python | - | 動画処理 |
+| tqdm | - | プログレス表示 |
+
+### 13.6 設定構造
+
+`lipSync` 設定は以下のフィールドを持つ:
 
 ```jsonc
 {
@@ -694,6 +759,8 @@ cache = true ?
       {
         "id": "lip-neutral",
         "emotion": "neutral",
+        "basePath": "talk_loop.mp4",           // ベースループ動画
+        "mouthDataPath": "talk_loop.mouth.json", // 口位置JSON（Python出力）
         "images": {
           "A": "lip/neutral_A.png",
           "I": "lip/neutral_I.png",
@@ -701,6 +768,11 @@ cache = true ?
           "E": "lip/neutral_E.png",
           "O": "lip/neutral_O.png",
           "N": "lip/neutral_N.png"
+        },
+        "overlayConfig": {                      // オプション: 口画像の調整
+          "scale": 1.0,
+          "offsetX": 0,
+          "offsetY": 0
         }
       }
     ]
@@ -708,13 +780,21 @@ cache = true ?
 }
 ```
 
-### 13.6 処理フロー
+#### overlayConfig パラメータ
+
+| パラメータ | 説明 | デフォルト |
+|-----------|------|----------|
+| `scale` | 口画像のスケール倍率。検出した口の幅/高さに対する倍率 | 1.0 |
+| `offsetX` | 水平オフセット（ピクセル）。正の値で右にずれる | 0 |
+| `offsetY` | 垂直オフセット（ピクセル）。正の値で下にずれる | 0 |
+
+### 13.7 処理フロー
 
 ```
 speakLipSync
      │
      ▼
-lipSync設定チェック
+lipSync設定チェック（必須）
      │
      ├─ VOICEVOX ─────────────────────────────┐
      │                                        │
@@ -740,17 +820,56 @@ lipSync設定チェック
      │                                        │
      └────────────────┬───────────────────────┘
                       ▼
-          emotion → lipSync画像セット選択
+          emotion → lipSync設定選択
                       │
                       ▼
-          composeLipSyncVideo()
-          (ffmpeg: 画像切り替え + 音声)
+          loadMouthPositionData()
+          (口位置JSON読み込み)
+                      │
+                      ▼
+          composeOverlayLipSyncVideo()
+          ┌───────────────────────────────────┐
+          │ 1. ベース動画を音声長にループ        │
+          │ 2. 各タイムラインセグメントに対して   │
+          │    - 対応フレームの口位置を取得      │
+          │    - FFmpeg overlayフィルタで合成   │
+          │ 3. 音声を多重化                    │
+          └───────────────────────────────────┘
                       │
                       ▼
                   出力MP4
 ```
 
-### 13.7 MFCC 音声解析
+### 13.8 FFmpegオーバーレイ合成
+
+#### 13.8.1 フィルタ構成
+
+```
+                    ┌─────────────┐
+ ベース動画(ループ) → │   overlay   │ → 出力動画
+                    │   フィルタ   │
+       口画像群 ────→│  (時間条件) │
+                    └─────────────┘
+                          ↑
+                     音声トラック
+```
+
+#### 13.8.2 時間条件付きオーバーレイ
+
+各ビゼムセグメントに対して `enable='between(t,start,end)'` 条件を設定:
+
+```
+overlay=x=centerX-w/2:y=centerY-h/2:enable='between(t,0.0,0.15)'
+```
+
+#### 13.8.3 口画像のスケーリングと配置
+
+1. 口位置JSONから該当フレームの `centerX`, `centerY`, `width`, `height` を取得
+2. `overlayConfig.scale` を適用してサイズを調整
+3. `overlayConfig.offsetX/Y` でオフセットを加算
+4. 口画像の中心が口位置に来るよう配置
+
+### 13.9 MFCC 音声解析
 
 Style-Bert-VITS2や直接音声使用時にビゼムタイムラインを生成するため、MFCCベースの音声解析を実装。
 [LipWI2VJs](https://github.com/M-gen/LipWI2VJs) / [wLipSync](https://github.com/mrxz/wLipSync) の手法を採用。
@@ -764,30 +883,34 @@ const timeline = await provider.generateTimeline('/path/to/audio.wav')
 // => [{ viseme: 'A', startMs: 0, endMs: 150 }, ...]
 ```
 
-### 13.8 実装対象ファイル
+### 13.10 実装対象ファイル
 
-| ファイル | 変更内容 |
-|---------|---------|
-| `src/config/schema.ts` | lipSyncスキーマ（aiueoN形式） |
-| `src/config/loader.ts` | ResolvedLipSyncImages型（6形状） |
-| `src/types/generate.ts` | VisemeType（A,I,U,E,O,N）, VisemeSegment |
+| ファイル | 内容 |
+|---------|------|
+| `scripts/detect_mouth_positions.py` | Python口位置検出スクリプト |
+| `scripts/requirements.txt` | Python依存パッケージ |
+| `src/config/schema.ts` | lipSyncスキーマ（basePath, mouthDataPath, overlayConfig追加） |
+| `src/config/loader.ts` | ResolvedLipSyncVariant型、解決ロジック |
+| `src/types/generate.ts` | VisemeType, VisemeSegment |
 | `src/services/voicevox.ts` | synthesizeWithQuery（モーラ情報返却） |
 | `src/services/generation.service.ts` | speakLipSyncアクション |
-| `src/services/lip-sync/types.ts` | LipSyncProvider, MfccProfile型 |
+| `src/services/lip-sync/types.ts` | MouthPosition, MouthPositionData, MouthOverlayConfig型 |
 | `src/services/lip-sync/timeline-generator.ts` | VOICEVOX用タイムライン生成 |
 | `src/services/lip-sync/mfcc-provider.ts` | MFCC音声解析 |
 | `src/services/lip-sync/profile.json` | MFCCキャリブレーションデータ |
-| `src/services/lip-sync/video-composer.ts` | 画像→動画合成 |
+| `src/services/lip-sync/overlay-composer.ts` | FFmpegオーバーレイ合成 |
 
-### 13.9 注意事項
+### 13.11 注意事項
 
 | 項目 | 内容 |
 |------|------|
+| lipSync設定 | **必須**。未設定の場合はエラー |
+| 口位置JSON | Python事前処理で生成が必要 |
 | TTS対応 | VOICEVOX / Style-Bert-VITS2 両対応 |
 | 音声直接使用 | `transcribe: false` も MFCC で対応 |
 | STT設定 | `audio + transcribe: true` 使用時は必須 |
 | emotion | lipSync配列に該当がない場合は `neutral` にフォールバック |
-| lipSync設定 | 未設定の場合はエラー |
+| overlayConfig | 省略可。口画像のサイズ・位置を微調整する場合に使用 |
 
 ## 14. 未実装項目 / TODO
 - `text` / `generate` エンドポイント内部のTTS呼び出し、音声合成、ストリーム割込み／MP4出力処理。

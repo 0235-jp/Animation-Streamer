@@ -45,10 +45,20 @@ export interface ResolvedLipSyncImages {
   N: string // ん/無音 - 閉じた口
 }
 
+export interface ResolvedOverlayConfig {
+  scale: number
+  offsetX: number
+  offsetY: number
+}
+
 export interface ResolvedLipSyncVariant {
   id: string
   emotion: string
   images: ResolvedLipSyncImages
+  // オーバーレイ合成用
+  basePath: string // ベース動画の絶対パス
+  mouthDataPath: string // 口位置JSONの絶対パス
+  overlayConfig: ResolvedOverlayConfig
 }
 
 export interface ResolvedSpeechTransitions {
@@ -249,7 +259,7 @@ const resolvePreset = (
   const audioProfile = resolveAudioProfile(preset.audioProfile, normalizeVoiceEmotion)
   const actionsMap = new Map(actions.map((action) => [action.id.toLowerCase(), action]))
 
-  // lipSync設定の解決（aiueoN形式 - 日本語母音ベース）
+  // lipSync設定の解決（aiueoN形式 - 日本語母音ベース + オーバーレイ合成）
   const lipSync = preset.lipSync?.map((variant) => ({
     id: variant.id,
     emotion: variant.emotion.toLowerCase(),
@@ -260,6 +270,13 @@ const resolvePreset = (
       E: resolveMotionPath(variant.images.E),
       O: resolveMotionPath(variant.images.O),
       N: resolveMotionPath(variant.images.N),
+    },
+    basePath: resolveMotionPath(variant.basePath),
+    mouthDataPath: resolveMotionPath(variant.mouthDataPath),
+    overlayConfig: {
+      scale: variant.overlayConfig?.scale ?? 1.0,
+      offsetX: variant.overlayConfig?.offsetX ?? 0,
+      offsetY: variant.overlayConfig?.offsetY ?? 0,
     },
   }))
 

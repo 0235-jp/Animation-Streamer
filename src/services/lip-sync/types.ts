@@ -53,3 +53,58 @@ export interface MfccPhonemeData {
 export interface MfccCalibrationData {
   array: number[]
 }
+
+/**
+ * 口の位置情報（フレーム単位）
+ * Pythonスクリプト（detect_mouth_positions.py）の出力形式
+ */
+export interface MouthPosition {
+  /** フレーム番号 */
+  frameIndex: number
+  /** 動画内の時刻（秒） */
+  timeSeconds: number
+  /** 口の中心X座標 */
+  centerX: number
+  /** 口の中心Y座標 */
+  centerY: number
+  /** 口の幅 */
+  width: number
+  /** 口の高さ */
+  height: number
+  /** 検出信頼度（0-1）、0の場合はフォールバック値 */
+  confidence: number
+}
+
+/**
+ * 動画の口位置データ（JSON出力形式）
+ */
+export interface MouthPositionData {
+  /** 動画ファイル名 */
+  videoFileName: string
+  /** 動画の幅 */
+  videoWidth: number
+  /** 動画の高さ */
+  videoHeight: number
+  /** フレームレート */
+  frameRate: number
+  /** 総フレーム数 */
+  totalFrames: number
+  /** 総時間（秒） */
+  durationSeconds: number
+  /** 各フレームの口位置 */
+  positions: MouthPosition[]
+  /** データ作成日時 */
+  createdAt: string
+}
+
+/**
+ * 口画像オーバーレイ設定
+ */
+export interface MouthOverlayConfig {
+  /** 口画像のスケール倍率（検出した口サイズに対する比率） */
+  scale: number
+  /** X軸オフセット（ピクセル） */
+  offsetX: number
+  /** Y軸オフセット（ピクセル） */
+  offsetY: number
+}

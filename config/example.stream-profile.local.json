@@ -68,6 +68,8 @@
         {
           "id": "lip-neutral",
           "emotion": "neutral",
+          "basePath": "talk_loop.mp4",
+          "mouthDataPath": "talk_loop.mouth.json",
           "images": {
             "A": "lip/neutral_A.png",
             "I": "lip/neutral_I.png",
@@ -75,11 +77,18 @@
             "E": "lip/neutral_E.png",
             "O": "lip/neutral_O.png",
             "N": "lip/neutral_N.png"
+          },
+          "overlayConfig": {
+            "scale": 1.0,
+            "offsetX": 0,
+            "offsetY": 0
           }
         },
         {
           "id": "lip-happy",
           "emotion": "happy",
+          "basePath": "talk_loop.mp4",
+          "mouthDataPath": "talk_loop.mouth.json",
           "images": {
             "A": "lip/happy_A.png",
             "I": "lip/happy_I.png",
@@ -87,6 +96,11 @@
             "E": "lip/happy_E.png",
             "O": "lip/happy_O.png",
             "N": "lip/happy_N.png"
+          },
+          "overlayConfig": {
+            "scale": 1.0,
+            "offsetX": 0,
+            "offsetY": 0
           }
         }
       ]
