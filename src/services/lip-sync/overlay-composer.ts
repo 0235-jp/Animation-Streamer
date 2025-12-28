@@ -633,12 +633,10 @@ function getMouthPositionAtTime(mouthData: MouthPositionData, timeSeconds: numbe
     // フォールバック: 動画中央を想定
     return {
       frameIndex: 0,
-      timeSeconds: 0,
       centerX: mouthData.videoWidth / 2,
       centerY: mouthData.videoHeight * 0.7,
       width: mouthData.videoWidth * 0.2,
       height: mouthData.videoHeight * 0.1,
-      confidence: 0,
     }
   }
 
