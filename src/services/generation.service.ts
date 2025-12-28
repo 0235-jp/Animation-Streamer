@@ -719,9 +719,6 @@ export class GenerationService {
       jobDir,
     })
 
-    // 生成した動画から音声を抽出（連結用）
-    const extractedAudioPath = await this.mediaPipeline.extractAudioTrack(videoPath, jobDir, `lipsync-audio-${requestId}`)
-
     // inputType を決定
     let inputType: SpeakInputType
     if (!audio) {
@@ -739,7 +736,7 @@ export class GenerationService {
       clips: [{ id: `lipsync-${requestId}`, path: videoPath, durationMs }],
       motionIds: lipSyncPlan.variantIds,
       durationMs,
-      audioPath: extractedAudioPath,
+      audioPath,
       text,
       inputType,
     }
