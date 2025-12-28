@@ -491,9 +491,9 @@ ffmpeg -i "talk_large.mp4" -vf "scale=896:1152,fps=16" -c:v libx264 -pix_fmt yuv
 
 多数決で推奨基準が決定され、変換が必要なファイルのコマンドが自動生成されます。
 
-## Acknowledgements
+## Special Thanks
 
-- [LipWI2VJs](https://github.com/M-gen/LipWI2VJs) - MFCCベースの音声リップシンク解析
+- [LipWI2VJs](https://github.com/M-gen/LipWI2VJs) - 口の形の解析に参考にさせていただきました
+- [MotionPNGTuber](https://github.com/rotejin/MotionPNGTuber) - LipSyncアクションの実装に参考にさせていただきました
 - [wLipSync](https://github.com/mrxz/wLipSync) - MFCCプロファイルデータ提供
-- [MotionPNGTuber](https://github.com/rotejin/MotionPNGTuber) - アニメ顔検出ライブラリの参考実装
 

@@ -94,25 +94,20 @@ TypeScriptの `MouthPositionData` 型（`src/services/lip-sync/types.ts`）に�
 
 ```json
 {
-  "videoFileName": "input.mp4",
   "videoWidth": 1920,
   "videoHeight": 1080,
   "frameRate": 30.0,
   "totalFrames": 300,
-  "durationSeconds": 10.0,
   "positions": [
     {
       "frameIndex": 0,
-      "timeSeconds": 0.0,
       "centerX": 960.0,
       "centerY": 540.0,
       "width": 100.0,
       "height": 50.0,
-      "confidence": 1.0,
       "rotation": 2.5
     }
-  ],
-  "createdAt": "2024-01-01T00:00:00+00:00"
+  ]
 }
 ```
 
@@ -120,7 +115,6 @@ TypeScriptの `MouthPositionData` 型（`src/services/lip-sync/types.ts`）に�
 - `centerX`, `centerY`: 口の中心座標（ピクセル）
 - `width`, `height`: 口のサイズ（ピクセル）
 - `rotation`: 顔の回転角度（度数法、正=時計回り）
-- `confidence`: 検出信頼度（1.0=検出成功, 0.5=補間, 0.3=外挿）
 
 ---
 
@@ -183,7 +177,65 @@ scripts/
 - opencv-python >= 4.8.0
 - numpy >= 1.24.0
 
+## MotionPNGTuberとの連携
+
+アニメキャラクターなど mediapipe で検出しにくい素材には、
+[MotionPNGTuber](https://github.com/rotejin/MotionPNGTuber) を使用できます。
+
+### convert_npz_to_json.py
+
+MotionPNGTuber で生成された `mouth_track.npz` を本プロジェクトの JSON 形式に変換するスクリプト。
+
+```bash
+python convert_npz_to_json.py mouth_track.npz -o output.mouth.json
+```
+
+| オプション | 説明 |
+|-----------|------|
+| `-o, --output` | 出力JSONファイル（デフォルト: 入力ファイル名.mouth.json） |
+
+### ワークフロー
+
+1. **MotionPNGTuber で顔トラッキング**
+   ```bash
+   python face_track_anime_detector.py \
+       --video loop.mp4 \
+       --out mouth_track.npz \
+       --device auto \
+       --pad 2.1
+   ```
+
+2. **(任意) キャリブレーション**
+   ```bash
+   python calibrate_mouth_track.py \
+       --video loop.mp4 \
+       --track mouth_track.npz
+   ```
+
+3. **MotionPNGTuber で口消し動画生成**
+   ```bash
+   python auto_erase_mouth.py \
+       --video loop.mp4 \
+       --track mouth_track.npz \
+       --out loop_mouthless.mp4 \
+       --coverage 0.6
+   ```
+
+4. **npz → JSON 変換（本プロジェクト）**
+   ```bash
+   cd /path/to/ai-streamer/scripts
+   python convert_npz_to_json.py mouth_track.npz -o loop.mouth.json
+   ```
+
+5. **出力ファイルを motions/ に配置**
+   ```
+   loop.mouth.json     → motions/loop.mouth.json
+   loop_mouthless.mp4  → motions/loop_mouthless.mp4
+   ```
+
+---
+
 ## 注意事項
 
-- **実写向けモデル**: mediapipe は実写の顔に最適化されています。アニメキャラクターでは検出精度が低下する場合があります。
+- **実写向けモデル**: mediapipe は実写の顔に最適化されています。アニメキャラクターでは検出精度が低下する場合があります。MotionPNGTuber の使用を検討してください。
 - **初回実行時**: モデルファイル (`face_landmarker.task`) を `models/` ディレクトリに自動ダウンロードします (~4MB)。

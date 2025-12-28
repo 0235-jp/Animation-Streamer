@@ -16,7 +16,6 @@ import json
 import math
 import sys
 import urllib.request
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -418,16 +417,25 @@ def detect_mouth_positions(
         print(f"平滑化を適用 (cutoff={smooth_cutoff}Hz)")
         positions = smooth_positions_zero_phase(positions, fps, smooth_cutoff)
 
+    # 出力用にpositionsから不要フィールドを削除
+    output_positions = []
+    for pos in positions:
+        output_positions.append({
+            "frameIndex": pos["frameIndex"],
+            "centerX": pos["centerX"],
+            "centerY": pos["centerY"],
+            "width": pos["width"],
+            "height": pos["height"],
+            "rotation": pos["rotation"],
+        })
+
     # 結果を構築
     result = {
-        "videoFileName": Path(video_path).name,
         "videoWidth": width,
         "videoHeight": height,
         "frameRate": fps,
-        "totalFrames": len(positions),
-        "durationSeconds": round(len(positions) / fps, 4),
-        "positions": positions,
-        "createdAt": datetime.now(timezone.utc).isoformat(),
+        "totalFrames": len(output_positions),
+        "positions": output_positions,
     }
 
     return result

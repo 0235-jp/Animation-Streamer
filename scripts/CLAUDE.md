@@ -52,7 +52,6 @@ python detect_mouth_positions.py input.mp4 -o output.json
 - `centerX`, `centerY`: 口の中心座標（ピクセル）
 - `width`, `height`: 口のサイズ（ピクセル）
 - `rotation`: 顔の回転角度（度数法、正=時計回り）
-- `confidence`: 検出信頼度（1.0=検出成功, 0.5=補間, 0.3=外挿）
 
 ### calibrate_mouth_positions.py
 
@@ -70,6 +69,22 @@ python calibrate_mouth_positions.py input.mp4 input.mouth.json
 - `+`/`-`: サイズ調整
 - `R`: リセット、`S`: 保存、`Q`/`ESC`: 終了
 - `Space`: 再生/停止、`,`/`.`: 前/次のフレーム
+
+### convert_npz_to_json.py
+
+MotionPNGTuber の `mouth_track.npz` を本プロジェクトの JSON 形式に変換するスクリプト。
+
+**使用例:**
+```bash
+python convert_npz_to_json.py mouth_track.npz -o output.mouth.json
+```
+
+**オプション:**
+- `-o, --output`: 出力JSONファイル（デフォルト: 入力ファイル名.mouth.json）
+
+**変換内容:**
+- `quad` (4頂点座標) → `centerX`, `centerY`, `width`, `height`, `rotation`
+- `det_stride` > 1 の場合、中間フレームを線形補間
 
 ## lipSync用の素材準備ワークフロー
 
@@ -124,7 +139,17 @@ pip install -r requirements.txt
 - opencv-python >= 4.8.0
 - numpy >= 1.24.0
 
+## MotionPNGTuber連携
+
+アニメキャラクターなど mediapipe で検出しにくい素材には [MotionPNGTuber](https://github.com/rotejin/MotionPNGTuber) を使用可能。
+
+1. MotionPNGTuber で顔トラッキング → `mouth_track.npz`
+2. MotionPNGTuber で口消し動画生成 → `loop_mouthless.mp4`
+3. `convert_npz_to_json.py` で変換 → `loop.mouth.json`
+
+詳細は README.md の「MotionPNGTuberとの連携」セクションを参照。
+
 ## 注意事項
 
-- mediapipe は実写の顔に最適化されているため、アニメキャラクターでは検出精度が低下する場合がある
+- mediapipe は実写の顔に最適化されているため、アニメキャラクターでは検出精度が低下する場合がある（→ MotionPNGTuber の使用を推奨）
 - 初回実行時にモデルファイル (`face_landmarker.task`) を自動ダウンロード (~4MB)
