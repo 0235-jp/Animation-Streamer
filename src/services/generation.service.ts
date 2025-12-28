@@ -9,15 +9,14 @@ import {
   type Sbv2VoiceProfile,
   type ResolvedVoicevoxAudioProfile,
   type ResolvedSbv2AudioProfile,
-  type ResolvedLipSyncVariant,
 } from '../config/loader'
-import { ClipPlanner } from './clip-planner'
+import { ClipPlanner, type LipSyncClipPlanResult } from './clip-planner'
 import { MediaPipeline, type ClipSource, NoAudioTrackError } from './media-pipeline'
 import { VoicevoxClient, type VoicevoxVoiceOptions } from './voicevox'
 import { StyleBertVits2Client, type StyleBertVits2VoiceOptions } from './style-bert-vits2'
 import { STTClient } from './stt'
 import { CacheService, type SpeakCacheKeyData, type IdleCacheKeyData, type CombinedCacheKeyData, type SpeakInputType } from './cache.service'
-import { generateVisemeTimeline, getMfccProvider, composeOverlayLipSyncVideo, loadMouthPositionData } from './lip-sync'
+import { generateVisemeTimeline, getMfccProvider, composeMultiSegmentLipSyncVideo } from './lip-sync'
 import type { ActionResult, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler, AudioInput, VoicevoxAudioQueryResponse } from '../types/generate'
 import { logger } from '../utils/logger'
 
@@ -368,25 +367,21 @@ export class GenerationService {
         requestId
       )
 
-      // リップシンク設定を取得（オーバーレイ合成用）
-      const lipSyncVariant = this.resolveLipSyncVariant(preset, emotion)
+      // 音声の長さを取得してクリッププランを作成
+      const audioDurationMs = timeline[timeline.length - 1].endMs
+      const lipSyncPlan = await this.clipPlanner.buildLipSyncPlan(preset.lipSync!, emotion, audioDurationMs)
 
-      // 口位置データを読み込み
-      const mouthData = await loadMouthPositionData(lipSyncVariant.mouthDataPath)
       logger.info(
-        { requestId, mouthDataFile: lipSyncVariant.mouthDataPath, frames: mouthData.totalFrames },
-        'Loaded mouth position data'
+        { requestId, clips: lipSyncPlan.clips.length, totalDurationMs: lipSyncPlan.totalDurationMs },
+        'Built lip sync clip plan'
       )
 
-      // オーバーレイ合成でリップシンク動画を生成
-      const { outputPath, durationMs } = await composeOverlayLipSyncVideo({
+      // 複数セグメント対応のオーバーレイ合成でリップシンク動画を生成
+      const { outputPath, durationMs } = await composeMultiSegmentLipSyncVideo({
+        clips: lipSyncPlan.clips,
         timeline,
-        images: lipSyncVariant.images,
-        baseVideoPath: lipSyncVariant.basePath,
-        mouthData,
         audioPath,
         jobDir,
-        overlayConfig: lipSyncVariant.overlayConfig,
       })
 
       // ファイル名を決定
@@ -397,12 +392,16 @@ export class GenerationService {
 
       logger.info({ requestId, durationMs, timelineSegments: timeline.length }, 'Lip sync overlay video generated')
 
-      return {
+      const result: ActionResult = {
         id: requestId,
         action: item.action,
         outputPath: finalPath,
         durationMs: Math.round(durationMs),
       }
+      if (includeDebug) {
+        result.motionIds = lipSyncPlan.variantIds
+      }
+      return result
     } finally {
       await this.mediaPipeline.removeJobDir(jobDir)
     }
@@ -479,34 +478,12 @@ export class GenerationService {
     params: Record<string, unknown>,
     requestId: string
   ): void {
-    // lipSync設定がない場合はエラー
-    if (!preset.lipSync || preset.lipSync.length === 0) {
+    // lipSync設定がない場合はエラー（large/small構造）
+    if (!preset.lipSync || preset.lipSync.large.length === 0) {
       throw new ActionProcessingError('lipSync設定がありません', requestId)
     }
     // VOICEVOX / Style-Bert-VITS2 どちらも対応
     // 直接音声使用（transcribe: false）も MFCC で対応可能
-  }
-
-  private resolveLipSyncVariant(preset: ResolvedPreset, emotion: string): ResolvedLipSyncVariant {
-    const normalizedEmotion = emotion.trim().toLowerCase()
-    let matchingVariant: ResolvedLipSyncVariant | undefined
-    let neutralVariant: ResolvedLipSyncVariant | undefined
-
-    for (const variant of preset.lipSync ?? []) {
-      if (variant.emotion === normalizedEmotion) {
-        matchingVariant = variant
-        break
-      }
-      if (!neutralVariant && variant.emotion === 'neutral') {
-        neutralVariant = variant
-      }
-    }
-
-    const selected = matchingVariant ?? neutralVariant
-    if (!selected) {
-      throw new Error('lipSyncに少なくとも1つの設定が必要です')
-    }
-    return selected
   }
 
   private async resolveAudioFilePath(
@@ -730,20 +707,16 @@ export class GenerationService {
       requestId
     )
 
-    const lipSyncVariant = this.resolveLipSyncVariant(preset, emotion)
+    // 音声の長さを取得してクリッププランを作成
+    const audioDurationMs = timeline[timeline.length - 1].endMs
+    const lipSyncPlan = await this.clipPlanner.buildLipSyncPlan(preset.lipSync!, emotion, audioDurationMs)
 
-    // 口位置データを読み込み
-    const mouthData = await loadMouthPositionData(lipSyncVariant.mouthDataPath)
-
-    // オーバーレイ合成でリップシンク動画を生成
-    const { outputPath: videoPath, durationMs } = await composeOverlayLipSyncVideo({
+    // 複数セグメント対応のオーバーレイ合成でリップシンク動画を生成
+    const { outputPath: videoPath, durationMs } = await composeMultiSegmentLipSyncVideo({
+      clips: lipSyncPlan.clips,
       timeline,
-      images: lipSyncVariant.images,
-      baseVideoPath: lipSyncVariant.basePath,
-      mouthData,
       audioPath,
       jobDir,
-      overlayConfig: lipSyncVariant.overlayConfig,
     })
 
     // 生成した動画から音声を抽出（連結用）
@@ -764,7 +737,7 @@ export class GenerationService {
       id: requestId,
       action: item.action,
       clips: [{ id: `lipsync-${requestId}`, path: videoPath, durationMs }],
-      motionIds: [],
+      motionIds: lipSyncPlan.variantIds,
       durationMs,
       audioPath: extractedAudioPath,
       text,

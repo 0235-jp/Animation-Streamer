@@ -1,0 +1,18 @@
+# 仮想環境
+venv/
+.venv/
+
+# モデルファイル（自動ダウンロード）
+models/
+
+# Python キャッシュ
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 出力ファイル
+*.mouth.json
+
+# デバッグ出力
+debug*.mp4

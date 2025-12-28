@@ -109,6 +109,12 @@ const lipSyncVariantSchema = z.object({
   overlayConfig: mouthOverlayConfigSchema.optional(),
 })
 
+// speechMotions と同じ large/small 構造
+export const sizedLipSyncSchema = z.object({
+  large: z.array(lipSyncVariantSchema).min(1),
+  small: z.array(lipSyncVariantSchema).optional(), // small は省略可能
+})
+
 // STT設定スキーマ（トップレベル）- OpenAI互換API
 export const sttConfigSchema = z.object({
   baseUrl: z.string().min(1).default('http://localhost:8000/v1'),
@@ -117,21 +123,26 @@ export const sttConfigSchema = z.object({
   language: z.string().min(1).default('ja'),
 })
 
-const presetSchema = z.object({
-  id: z.string().min(1),
-  displayName: z.string().min(1).optional(),
-  actions: z.array(actionSchema).default([]),
-  idleMotions: sizedMotionSchema,
-  speechMotions: sizedMotionSchema,
-  speechTransitions: z
-    .object({
-      enter: transitionCollectionSchema.optional(),
-      exit: transitionCollectionSchema.optional(),
-    })
-    .optional(),
-  audioProfile: audioProfileSchema,
-  lipSync: z.array(lipSyncVariantSchema).optional(),
-})
+const presetSchema = z
+  .object({
+    id: z.string().min(1),
+    displayName: z.string().min(1).optional(),
+    actions: z.array(actionSchema).default([]),
+    idleMotions: sizedMotionSchema,
+    speechMotions: sizedMotionSchema.optional(),
+    speechTransitions: z
+      .object({
+        enter: transitionCollectionSchema.optional(),
+        exit: transitionCollectionSchema.optional(),
+      })
+      .optional(),
+    audioProfile: audioProfileSchema,
+    lipSync: sizedLipSyncSchema.optional(),
+  })
+  .refine((data) => data.speechMotions || data.lipSync, {
+    message: 'speechMotions または lipSync のどちらかを設定してください',
+    path: ['speechMotions'],
+  })
 
 export const configSchema = z.object({
   server: z

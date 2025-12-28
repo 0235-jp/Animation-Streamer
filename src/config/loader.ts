@@ -53,12 +53,18 @@ export interface ResolvedOverlayConfig {
 
 export interface ResolvedLipSyncVariant {
   id: string
+  type: 'large' | 'small'
   emotion: string
   images: ResolvedLipSyncImages
   // オーバーレイ合成用
   basePath: string // ベース動画の絶対パス
   mouthDataPath: string // 口位置JSONの絶対パス
   overlayConfig: ResolvedOverlayConfig
+}
+
+export interface ResolvedLipSyncPools {
+  large: ResolvedLipSyncVariant[]
+  small: ResolvedLipSyncVariant[]
 }
 
 export interface ResolvedSpeechTransitions {
@@ -124,10 +130,10 @@ export interface ResolvedPreset {
   actions: ResolvedAction[]
   actionsMap: Map<string, ResolvedAction>
   idleMotions: ResolvedIdlePools
-  speechMotions: ResolvedSpeechPools
+  speechMotions?: ResolvedSpeechPools
   speechTransitions?: ResolvedSpeechTransitions
   audioProfile: ResolvedAudioProfile
-  lipSync?: ResolvedLipSyncVariant[]
+  lipSync?: ResolvedLipSyncPools
 }
 
 export interface ResolvedPaths {
@@ -218,20 +224,22 @@ const resolvePreset = (
     })),
   }
 
-  const speechMotions: ResolvedSpeechPools = {
-    large: preset.speechMotions.large.map((motion) => ({
-      ...motion,
-      type: 'large' as const,
-      emotion: motion.emotion.toLowerCase(),
-      absolutePath: resolveMotionPath(motion.path),
-    })),
-    small: preset.speechMotions.small.map((motion) => ({
-      ...motion,
-      type: 'small' as const,
-      emotion: motion.emotion.toLowerCase(),
-      absolutePath: resolveMotionPath(motion.path),
-    })),
-  }
+  const speechMotions: ResolvedSpeechPools | undefined = preset.speechMotions
+    ? {
+        large: preset.speechMotions.large.map((motion) => ({
+          ...motion,
+          type: 'large' as const,
+          emotion: motion.emotion.toLowerCase(),
+          absolutePath: resolveMotionPath(motion.path),
+        })),
+        small: preset.speechMotions.small.map((motion) => ({
+          ...motion,
+          type: 'small' as const,
+          emotion: motion.emotion.toLowerCase(),
+          absolutePath: resolveMotionPath(motion.path),
+        })),
+      }
+    : undefined
 
   const normalizeTransition = (motion: { id: string; emotion: string; path: string }): ResolvedTransitionMotion => ({
     ...motion,
@@ -260,8 +268,13 @@ const resolvePreset = (
   const actionsMap = new Map(actions.map((action) => [action.id.toLowerCase(), action]))
 
   // lipSync設定の解決（aiueoN形式 - 日本語母音ベース + オーバーレイ合成）
-  const lipSync = preset.lipSync?.map((variant) => ({
+  // speechMotions と同じ large/small 構造
+  const resolveLipSyncVariant = (
+    variant: NonNullable<typeof preset.lipSync>['large'][number],
+    type: 'large' | 'small'
+  ): ResolvedLipSyncVariant => ({
     id: variant.id,
+    type,
     emotion: variant.emotion.toLowerCase(),
     images: {
       A: resolveMotionPath(variant.images.A),
@@ -278,7 +291,14 @@ const resolvePreset = (
       offsetX: variant.overlayConfig?.offsetX ?? 0,
       offsetY: variant.overlayConfig?.offsetY ?? 0,
     },
-  }))
+  })
+
+  const lipSync: ResolvedLipSyncPools | undefined = preset.lipSync
+    ? {
+        large: preset.lipSync.large.map((v) => resolveLipSyncVariant(v, 'large')),
+        small: (preset.lipSync.small ?? []).map((v) => resolveLipSyncVariant(v, 'small')),
+      }
+    : undefined
 
   return {
     id: preset.id,

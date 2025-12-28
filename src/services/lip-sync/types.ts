@@ -73,6 +73,8 @@ export interface MouthPosition {
   height: number
   /** 検出信頼度（0-1）、0の場合はフォールバック値 */
   confidence: number
+  /** 顔の回転角度（度数法）、正の値は時計回り */
+  rotation?: number
 }
 
 /**

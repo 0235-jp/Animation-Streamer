@@ -1,66 +1,130 @@
 # scripts/
 
-Python スクリプト群。リップシンク用の事前処理ツールを格納。
+リップシンク用の前処理Pythonスクリプト群
 
-## ファイル構成
+## ファイル
 
-| ファイル | 説明 |
-|---------|------|
-| `detect_mouth_positions.py` | 動画から口位置を検出するCLIスクリプト |
-| `requirements.txt` | Python 依存パッケージ |
+### preprocess_lipsync.py（推奨）
 
-## 口位置検出スクリプト
+口位置検出と口消し動画生成を一括で行うメインスクリプト。
 
-`detect_mouth_positions.py` は [MotionPNGTuber](https://github.com/rotejin/MotionPNGTuber) と同じライブラリを使用してアニメ顔の口位置を検出する。
+**機能:**
+- mediapipe FaceLandmarker で口の中心座標・サイズ・回転角度を抽出
+- ホモグラフィ変換 + cv2.inpaint + 平面フィッティング陰影補正で口を消去
+- 自動参照フレーム選択（口が閉じていて品質の高いフレーム）
+- フェザリングで境界を滑らかにブレンド
 
-### 使用ライブラリ
-
-- `anime-face-detector` - アニメ顔検出（28点ランドマーク）
-- `mmdet` / `mmpose` / `mmcv-full` - 機械学習ベースの検出
-- `opencv-python` - 動画処理
-- `tqdm` - プログレス表示
-
-### 使用方法
-
+**使用例:**
 ```bash
-# 仮想環境のセットアップ
-python -m venv venv
-source venv/bin/activate
+# 基本的な使い方（JSON + 口消し動画を出力）
+python preprocess_lipsync.py input.mp4
 
-# 依存パッケージのインストール
-pip install openmim
-mim install mmcv-full==1.7.0
-pip install -r scripts/requirements.txt
+# 出力プレフィックスを指定
+python preprocess_lipsync.py input.mp4 -o output_prefix
 
-# 口位置検出の実行
-python scripts/detect_mouth_positions.py \
-  --input motions/talk_loop.mp4 \
-  --output motions/talk_loop.mouth.json
+# デバッグ動画を出力
+python preprocess_lipsync.py input.mp4 --debug-output debug.mp4
 ```
 
-### 出力形式
+**出力ファイル:**
+- `<入力>.mouth.json`: 口位置データ（TypeScript `MouthPositionData` 型準拠）
+- `<入力>_mouthless.mp4`: 口を消した動画（lipSync用ベース動画）
 
+**主要オプション:**
+- `-o, --output`: 出力プレフィックス
+- `--stride`: フレームスキップ間隔（高速化用、デフォルト: 1）
+- `--pad`: 口周辺のパディング係数（デフォルト: 0.3）
+- `--smooth-cutoff`: 平滑化カットオフ周波数 Hz（デフォルト: 3.0、0で無効）
+- `--coverage`: 口消し領域のカバレッジ 0.0-1.0（デフォルト: 0.6）
+- `--inpaint-radius`: インペインティング半径（デフォルト: 5）
+- `--debug-output`: デバッグ動画の出力パス
+
+### detect_mouth_positions.py
+
+口位置検出のみを行うシンプルなスクリプト（口消しなし）。
+
+**使用例:**
+```bash
+python detect_mouth_positions.py input.mp4 -o output.json
+```
+
+**出力フィールド:**
+- `centerX`, `centerY`: 口の中心座標（ピクセル）
+- `width`, `height`: 口のサイズ（ピクセル）
+- `rotation`: 顔の回転角度（度数法、正=時計回り）
+- `confidence`: 検出信頼度（1.0=検出成功, 0.5=補間, 0.3=外挿）
+
+### calibrate_mouth_positions.py
+
+検出した口位置をインタラクティブに調整するキャリブレーションツール。
+
+**使用例:**
+```bash
+python calibrate_mouth_positions.py input.mp4 input.mouth.json
+```
+
+**操作方法:**
+- マウス左ドラッグ: 位置調整
+- マウスホイール: サイズ調整
+- 矢印キー: 位置微調整 (1px)
+- `+`/`-`: サイズ調整
+- `R`: リセット、`S`: 保存、`Q`/`ESC`: 終了
+- `Space`: 再生/停止、`,`/`.`: 前/次のフレーム
+
+## lipSync用の素材準備ワークフロー
+
+```bash
+# 1. ループ動画を前処理
+python preprocess_lipsync.py loop.mp4
+
+# 2. 出力ファイルをmotions/に配置
+#    - loop.mouth.json → motions/loop.mouth.json
+#    - loop_mouthless.mp4 → motions/loop_mouthless.mp4
+
+# 3. config/stream-profile.json を設定
+```
+
+**config設定例:**
 ```json
 {
-  "videoFileName": "talk_loop.mp4",
-  "videoWidth": 896,
-  "videoHeight": 1152,
-  "frameRate": 16,
-  "totalFrames": 48,
-  "durationSeconds": 3.0,
-  "positions": [
-    {
-      "frameIndex": 0,
-      "timeSeconds": 0.0,
-      "centerX": 448,
-      "centerY": 720,
-      "width": 120,
-      "height": 60,
-      "confidence": 0.95
-    }
-  ],
-  "createdAt": "2025-12-28T10:00:00.000Z"
+  "lipSync": {
+    "large": [
+      {
+        "id": "lip-neutral",
+        "emotion": "neutral",
+        "basePath": "loop_mouthless.mp4",
+        "mouthDataPath": "loop.mouth.json",
+        "images": {
+          "A": "lip/open.png",
+          "I": "lip/half.png",
+          "U": "lip/small.png",
+          "E": "lip/mid.png",
+          "O": "lip/round.png",
+          "N": "lip/closed.png"
+        }
+      }
+    ]
+  }
 }
 ```
 
-出力JSONは `lipSync[].mouthDataPath` で参照される。
+## セットアップ
+
+```bash
+cd scripts
+python -m venv venv
+source venv/bin/activate  # Linux/macOS
+pip install -r requirements.txt
+```
+
+## 依存関係
+
+- Python 3.10+
+- mediapipe >= 0.10.0
+- opencv-python >= 4.8.0
+- numpy >= 1.24.0
+
+## 注意事項
+
+- mediapipe は実写の顔に最適化されているため、アニメキャラクターでは検出精度が低下する場合がある
+- 初回実行時にモデルファイル (`face_landmarker.task`) を自動ダウンロード (~4MB)

@@ -18,7 +18,7 @@ Zod を使用した設定バリデーションスキーマ:
 - `audioProfileSchema` - TTS エンジン設定（VOICEVOX / Style-Bert-VITS2）
 - `sizedMotionSchema` - large/small モーション定義
 - `sttConfigSchema` - STT設定
-- `lipSyncVariantSchema` - リップシンク設定（basePath, mouthDataPath, images, overlayConfig）
+- `sizedLipSyncSchema` - リップシンク設定（large/small 形式、basePath, mouthDataPath, images, overlayConfig）
 
 ### TTS エンジン
 

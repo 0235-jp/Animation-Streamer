@@ -10,8 +10,7 @@
 | `types.ts` | 型定義 (MouthPosition, MouthPositionData, VisemeSegment など) |
 | `timeline-generator.ts` | VOICEVOX モーラ情報からビゼムタイムライン生成 |
 | `mfcc-provider.ts` | MFCC 音声解析によるタイムライン生成 |
-| `overlay-composer.ts` | FFmpeg オーバーレイ合成 |
-| `video-composer.ts` | 画像切り替え方式の動画合成 |
+| `overlay-composer.ts` | FFmpeg オーバーレイ合成（回転対応） |
 | `profile.json` | MFCC キャリブレーションデータ |
 
 ## 処理フロー
@@ -66,5 +65,9 @@
 
 ## 事前処理（Python）
 
-ベース動画からの口位置検出は `scripts/detect_mouth_positions.py` で行う。
-出力される `MouthPositionData` JSON を `mouthDataPath` で設定ファイルから参照する。
+ベース動画からの口位置検出は `scripts/preprocess_lipsync.py`（推奨）で行う。
+出力ファイル:
+- `<入力>.mouth.json`: 口位置データ（`mouthDataPath` で参照）
+- `<入力>_mouthless.mp4`: 口消し済み動画（`basePath` で参照）
+
+`MouthPosition` には `rotation` フィールド（顔の回転角度）が含まれ、オーバーレイ合成時に口画像が回転される。

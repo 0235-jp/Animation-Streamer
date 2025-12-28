@@ -36,10 +36,12 @@
 - `id` / `displayName` - 識別子と表示名
 - `actions` - カスタムアクション
 - `idleMotions` - 待機モーション (large/small)
-- `speechMotions` - 発話モーション (large/small)
+- `speechMotions` - 発話モーション (large/small) ※speakアクション用
 - `speechTransitions` - 発話開始/終了トランジション
 - `audioProfile` - TTS設定 (voicevox または style-bert-vits2)
-- `lipSync` - リップシンク設定 (speakLipSync アクション用)
+- `lipSync` - リップシンク設定 (speakLipSync アクション用、large/small 形式)
+
+**注意**: `speechMotions` または `lipSync` のどちらかは必須
 
 ## セットアップ
 

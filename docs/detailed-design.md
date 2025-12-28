@@ -688,27 +688,39 @@ cache = true ?
 | **O** | 丸く開いた口 | 母音: お(o) |
 | **N** | 閉じた口 | 母音: ん(N), 子音, 無音, ポーズ |
 
-### 13.5 口位置検出（Python事前処理）
+### 13.5 口位置検出・口消し動画生成（Python事前処理）
 
 #### 13.5.1 概要
 
-MotionPNGTuberと同じライブラリ（anime-face-detector, mmpose）を使用したPythonスクリプトで、ベース動画から各フレームの口位置を検出しJSONファイルとして出力する。
+mediapipe FaceLandmarker を使用したPythonスクリプトで、ベース動画から各フレームの口位置を検出しJSONファイルとして出力する。また、口消し動画も同時に生成できる。
+
+**スクリプト一覧:**
+- `preprocess_lipsync.py`（推奨）: 口位置検出 + 口消し動画生成を一括実行
+- `detect_mouth_positions.py`: 口位置検出のみ（シンプル版）
+- `calibrate_mouth_positions.py`: 検出結果のインタラクティブ調整ツール
 
 #### 13.5.2 使用方法
 
 ```bash
 # Python環境のセットアップ
+cd scripts
 python -m venv venv
 source venv/bin/activate
-pip install openmim
-mim install mmcv-full==1.7.0
-pip install -r scripts/requirements.txt
+pip install -r requirements.txt
 
-# 口位置検出の実行
-python scripts/detect_mouth_positions.py \
-  --input motions/talk_loop.mp4 \
-  --output motions/talk_loop.mouth.json
+# 推奨: 口位置検出 + 口消し動画を一括生成
+python preprocess_lipsync.py input.mp4
+# → input.mouth.json, input_mouthless.mp4
+
+# 口位置検出のみ
+python detect_mouth_positions.py input.mp4 -o output.json
 ```
+
+**主要オプション（preprocess_lipsync.py）:**
+- `--stride`: フレームスキップ間隔（高速化用、デフォルト: 1）
+- `--smooth-cutoff`: 平滑化カットオフ周波数 Hz（デフォルト: 3.0）
+- `--coverage`: 口消し領域のカバレッジ 0.0-1.0（デフォルト: 0.6）
+- `--debug-output`: デバッグ動画の出力パス
 
 #### 13.5.3 出力形式（MouthPositionData）
 
@@ -728,54 +740,66 @@ python scripts/detect_mouth_positions.py \
       "centerY": 720,
       "width": 120,
       "height": 60,
-      "confidence": 0.95
+      "confidence": 0.95,
+      "rotation": 2.5
     }
   ],
   "createdAt": "2025-12-28T10:00:00.000Z"
 }
 ```
 
+**フィールド説明:**
+- `centerX`, `centerY`: 口の中心座標（ピクセル）
+- `width`, `height`: 口のサイズ（ピクセル）
+- `rotation`: 顔の回転角度（度数法、正=時計回り）
+- `confidence`: 検出信頼度（1.0=検出成功, 0.5=補間, 0.3=外挿）
+
 #### 13.5.4 使用ライブラリ
 
 | ライブラリ | バージョン | 用途 |
 |-----------|----------|------|
-| anime-face-detector | 0.0.9 | アニメ顔検出（28点ランドマーク） |
-| mmdet | 2.28.0 | オブジェクト検出 |
-| mmpose | 0.29.0 | ランドマーク検出 |
-| mmcv-full | 1.7.0 | CV基盤 |
-| opencv-python | - | 動画処理 |
-| tqdm | - | プログレス表示 |
+| mediapipe | >= 0.10.0 | 顔検出・ランドマーク（478点） |
+| opencv-python | >= 4.8.0 | 動画処理・口消し |
+| numpy | >= 1.24.0 | 数値計算 |
+
+#### 13.5.5 注意事項
+
+- mediapipe は実写の顔に最適化されており、アニメキャラクターでは検出精度が低下する場合がある
+- 初回実行時にモデルファイル (`face_landmarker.task`) を自動ダウンロード (~4MB)
 
 ### 13.6 設定構造
 
-`lipSync` 設定は以下のフィールドを持つ:
+`lipSync` 設定は `speechMotions` と同様に `large` / `small` のサイズ区分を持つ:
 
 ```jsonc
 {
   "presets": [{
     "id": "anchor-a",
     "audioProfile": { ... },
-    "lipSync": [
-      {
-        "id": "lip-neutral",
-        "emotion": "neutral",
-        "basePath": "talk_loop.mp4",           // ベースループ動画
-        "mouthDataPath": "talk_loop.mouth.json", // 口位置JSON（Python出力）
-        "images": {
-          "A": "lip/neutral_A.png",
-          "I": "lip/neutral_I.png",
-          "U": "lip/neutral_U.png",
-          "E": "lip/neutral_E.png",
-          "O": "lip/neutral_O.png",
-          "N": "lip/neutral_N.png"
-        },
-        "overlayConfig": {                      // オプション: 口画像の調整
-          "scale": 1.0,
-          "offsetX": 0,
-          "offsetY": 0
+    "lipSync": {
+      "large": [
+        {
+          "id": "lip-neutral",
+          "emotion": "neutral",
+          "basePath": "talk_loop_mouthless.mp4", // 口消し済みベース動画
+          "mouthDataPath": "talk_loop.mouth.json", // 口位置JSON（Python出力）
+          "images": {
+            "A": "lip/neutral_A.png",
+            "I": "lip/neutral_I.png",
+            "U": "lip/neutral_U.png",
+            "E": "lip/neutral_E.png",
+            "O": "lip/neutral_O.png",
+            "N": "lip/neutral_N.png"
+          },
+          "overlayConfig": {                      // オプション: 口画像の調整
+            "scale": 1.0,
+            "offsetX": 0,
+            "offsetY": 0
+          }
         }
-      }
-    ]
+      ],
+      "small": [...]  // オプション: small サイズ用
+    }
   }]
 }
 ```
@@ -887,7 +911,9 @@ const timeline = await provider.generateTimeline('/path/to/audio.wav')
 
 | ファイル | 内容 |
 |---------|------|
-| `scripts/detect_mouth_positions.py` | Python口位置検出スクリプト |
+| `scripts/preprocess_lipsync.py` | Python口位置検出+口消し動画生成（推奨） |
+| `scripts/detect_mouth_positions.py` | Python口位置検出スクリプト（シンプル版） |
+| `scripts/calibrate_mouth_positions.py` | 口位置調整ツール |
 | `scripts/requirements.txt` | Python依存パッケージ |
 | `src/config/schema.ts` | lipSyncスキーマ（basePath, mouthDataPath, overlayConfig追加） |
 | `src/config/loader.ts` | ResolvedLipSyncVariant型、解決ロジック |
