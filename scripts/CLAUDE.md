@@ -135,9 +135,9 @@ pip install -r requirements.txt
 ## 依存関係
 
 - Python 3.10+
-- mediapipe >= 0.10.0
-- opencv-python >= 4.8.0
-- numpy >= 1.24.0
+- mediapipe >= 0.10.20
+- opencv-python >= 4.10.0
+- numpy >= 2.2.0
 
 ## MotionPNGTuber連携
 
