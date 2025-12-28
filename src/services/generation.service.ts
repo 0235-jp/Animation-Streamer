@@ -376,11 +376,30 @@ export class GenerationService {
         'Built lip sync clip plan'
       )
 
+      // モーションの長さに合わせて音声をパディング（無音追加）
+      const motionDurationMs = lipSyncPlan.totalDurationMs
+      const fittedAudioPath = await this.mediaPipeline.fitAudioDuration(
+        audioPath,
+        motionDurationMs,
+        jobDir,
+        `lipsync-${requestId}-fit`
+      )
+
+      // タイムラインをモーションの長さに合わせて延長（末尾にNセグメント追加）
+      const extendedTimeline = [...timeline]
+      if (motionDurationMs > audioDurationMs) {
+        extendedTimeline.push({
+          startMs: audioDurationMs,
+          endMs: motionDurationMs,
+          viseme: 'N' as const,
+        })
+      }
+
       // 複数セグメント対応のオーバーレイ合成でリップシンク動画を生成
       const { outputPath, durationMs } = await composeMultiSegmentLipSyncVideo({
         clips: lipSyncPlan.clips,
-        timeline,
-        audioPath,
+        timeline: extendedTimeline,
+        audioPath: fittedAudioPath,
         jobDir,
       })
 
@@ -711,11 +730,30 @@ export class GenerationService {
     const audioDurationMs = timeline[timeline.length - 1].endMs
     const lipSyncPlan = await this.clipPlanner.buildLipSyncPlan(preset.lipSync!, emotion, audioDurationMs)
 
+    // モーションの長さに合わせて音声をパディング（無音追加）
+    const motionDurationMs = lipSyncPlan.totalDurationMs
+    const fittedAudioPath = await this.mediaPipeline.fitAudioDuration(
+      audioPath,
+      motionDurationMs,
+      jobDir,
+      `lipsync-${requestId}-fit`
+    )
+
+    // タイムラインをモーションの長さに合わせて延長（末尾にNセグメント追加）
+    const extendedTimeline = [...timeline]
+    if (motionDurationMs > audioDurationMs) {
+      extendedTimeline.push({
+        startMs: audioDurationMs,
+        endMs: motionDurationMs,
+        viseme: 'N' as const,
+      })
+    }
+
     // 複数セグメント対応のオーバーレイ合成でリップシンク動画を生成
     const { outputPath: videoPath, durationMs } = await composeMultiSegmentLipSyncVideo({
       clips: lipSyncPlan.clips,
-      timeline,
-      audioPath,
+      timeline: extendedTimeline,
+      audioPath: fittedAudioPath,
       jobDir,
     })
 
@@ -736,7 +774,7 @@ export class GenerationService {
       clips: [{ id: `lipsync-${requestId}`, path: videoPath, durationMs }],
       motionIds: lipSyncPlan.variantIds,
       durationMs,
-      audioPath,
+      audioPath: fittedAudioPath,
       text,
       inputType,
     }
