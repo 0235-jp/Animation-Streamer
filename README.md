@@ -220,7 +220,7 @@ python scripts/detect_mouth_positions.py \
 
 ### 設定
 
-プリセットに `lipSync` 配列を追加し、ベース動画・口位置JSON・口画像を指定します。
+プリセットに `lipSync` オブジェクトを追加し、ベース動画・口位置JSON・口画像を指定します。`large`（長文用）と `small`（短文用、省略可）の2種類を設定できます。
 
 ```json
 {
@@ -231,27 +231,29 @@ python scripts/detect_mouth_positions.py \
       "voicevoxUrl": "http://127.0.0.1:50021",
       "voices": [{ "emotion": "neutral", "speakerId": 1 }]
     },
-    "lipSync": [
-      {
-        "id": "lip-neutral",
-        "emotion": "neutral",
-        "basePath": "talk_loop.mp4",
-        "mouthDataPath": "talk_loop.mouth.json",
-        "images": {
-          "A": "lip/neutral_A.png",
-          "I": "lip/neutral_I.png",
-          "U": "lip/neutral_U.png",
-          "E": "lip/neutral_E.png",
-          "O": "lip/neutral_O.png",
-          "N": "lip/neutral_N.png"
-        },
-        "overlayConfig": {
-          "scale": 1.0,
-          "offsetX": 0,
-          "offsetY": 0
+    "lipSync": {
+      "large": [
+        {
+          "id": "lip-neutral",
+          "emotion": "neutral",
+          "basePath": "talk_loop.mp4",
+          "mouthDataPath": "talk_loop.mouth.json",
+          "images": {
+            "A": "lip/neutral_A.png",
+            "I": "lip/neutral_I.png",
+            "U": "lip/neutral_U.png",
+            "E": "lip/neutral_E.png",
+            "O": "lip/neutral_O.png",
+            "N": "lip/neutral_N.png"
+          },
+          "overlayConfig": {
+            "scale": 1.0,
+            "offsetX": 0,
+            "offsetY": 0
+          }
         }
-      }
-    ]
+      ]
+    }
   }]
 }
 ```
