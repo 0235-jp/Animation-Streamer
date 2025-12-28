@@ -189,7 +189,7 @@ OBS のメディアソースに `rtmp://localhost:1935/live/main` を指定し�
 
 ### Python 口位置検出スクリプトのセットアップ
 
-ベース動画から口位置を検出するPythonスクリプトを使用します。[MotionPNGTuber](https://github.com/rotejin/MotionPNGTuber) と同じライブラリ（anime-face-detector, mmpose）を使用しています。
+ベース動画から口位置を検出するPythonスクリプトを使用します。mediapipe の FaceLandmarker を使用しています。
 
 ```bash
 # Python 仮想環境を作成
@@ -197,8 +197,6 @@ python -m venv venv
 source venv/bin/activate
 
 # 依存パッケージをインストール
-pip install openmim
-mim install mmcv-full==1.7.0
 pip install -r scripts/requirements.txt
 
 # 口位置検出を実行

@@ -726,25 +726,20 @@ python detect_mouth_positions.py input.mp4 -o output.json
 
 ```json
 {
-  "videoFileName": "talk_loop.mp4",
   "videoWidth": 896,
   "videoHeight": 1152,
   "frameRate": 16,
   "totalFrames": 48,
-  "durationSeconds": 3.0,
   "positions": [
     {
       "frameIndex": 0,
-      "timeSeconds": 0.0,
       "centerX": 448,
       "centerY": 720,
       "width": 120,
       "height": 60,
-      "confidence": 0.95,
       "rotation": 2.5
     }
-  ],
-  "createdAt": "2025-12-28T10:00:00.000Z"
+  ]
 }
 ```
 
@@ -752,7 +747,6 @@ python detect_mouth_positions.py input.mp4 -o output.json
 - `centerX`, `centerY`: 口の中心座標（ピクセル）
 - `width`, `height`: 口のサイズ（ピクセル）
 - `rotation`: 顔の回転角度（度数法、正=時計回り）
-- `confidence`: 検出信頼度（1.0=検出成功, 0.5=補間, 0.3=外挿）
 
 #### 13.5.4 使用ライブラリ
 
