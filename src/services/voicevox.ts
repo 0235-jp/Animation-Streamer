@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs'
 import { fetch } from 'undici'
+import type { VoicevoxAudioQueryResponse } from '../types/generate'
 
 export interface VoicevoxSynthesisParameters {
   speedScale?: number
@@ -22,13 +23,13 @@ export interface VoicevoxSynthesizeOptions {
   endpoint?: string
 }
 
-type VoicevoxAudioQuery = Record<string, unknown> & {
-  speedScale?: number
-  pitchScale?: number
-  intonationScale?: number
-  volumeScale?: number
-  outputSamplingRate?: number
-  outputStereo?: boolean
+export interface VoicevoxSynthesizeWithQueryResult {
+  audioPath: string
+  audioQuery: VoicevoxAudioQueryResponse
+}
+
+type VoicevoxAudioQuery = VoicevoxAudioQueryResponse & {
+  [key: string]: unknown
 }
 
 export class VoicevoxClient {
@@ -44,6 +45,19 @@ export class VoicevoxClient {
     voice: VoicevoxVoiceOptions,
     options?: VoicevoxSynthesizeOptions
   ): Promise<string> {
+    const result = await this.synthesizeWithQuery(text, outputPath, voice, options)
+    return result.audioPath
+  }
+
+  /**
+   * テキストから音声を合成し、audio_queryの情報（モーラ情報含む）も返す
+   */
+  async synthesizeWithQuery(
+    text: string,
+    outputPath: string,
+    voice: VoicevoxVoiceOptions,
+    options?: VoicevoxSynthesizeOptions
+  ): Promise<VoicevoxSynthesizeWithQueryResult> {
     const normalizedText = text.trim()
     if (!normalizedText) {
       throw new Error('音声合成テキストが空です')
@@ -83,7 +97,11 @@ export class VoicevoxClient {
 
     const buffer = Buffer.from(await synthResponse.arrayBuffer())
     await fs.writeFile(outputPath, buffer)
-    return outputPath
+
+    return {
+      audioPath: outputPath,
+      audioQuery: adjustedQuery as VoicevoxAudioQueryResponse,
+    }
   }
 
   private applySynthesisOverrides(query: VoicevoxAudioQuery, overrides: VoicevoxVoiceOptions): VoicevoxAudioQuery {

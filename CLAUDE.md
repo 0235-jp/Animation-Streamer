@@ -19,6 +19,7 @@ src/
 ├── config/        # 設定ファイルのローダー・スキーマ
 ├── infra/         # RTMPサーバーなどインフラ層
 ├── services/      # ビジネスロジック (TTS, 動画生成, キャッシュ等)
+│   └── lip-sync/  # リップシンク機能 (タイムライン生成, オーバーレイ合成)
 ├── types/         # 型定義
 ├── utils/         # ロガー、プロセスユーティリティ
 ├── app.ts         # Express アプリケーション初期化
@@ -27,6 +28,7 @@ config/            # 設定ファイル (stream-profile.json)
 motions/           # モーション動画素材
 output/            # 生成された動画・音声の出力先
 docs/              # 設計ドキュメント、OpenAPI仕様
+scripts/           # Python スクリプト (口位置検出など)
 tests/             # テストファイル
 ```
 

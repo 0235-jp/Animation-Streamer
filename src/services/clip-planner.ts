@@ -1,6 +1,8 @@
 import {
   ResolvedAction,
   ResolvedIdleMotion,
+  ResolvedLipSyncPools,
+  ResolvedLipSyncVariant,
   ResolvedPreset,
   ResolvedSpeechMotion,
   type ResolvedSpeechPools,
@@ -21,6 +23,23 @@ export interface ClipPlanResult {
   talkDurationMs?: number
   enterDurationMs?: number
   exitDurationMs?: number
+}
+
+interface LipSyncClipCandidate {
+  variant: ResolvedLipSyncVariant
+  durationMs: number
+}
+
+export interface LipSyncClipSource {
+  id: string
+  variant: ResolvedLipSyncVariant
+  durationMs: number
+}
+
+export interface LipSyncClipPlanResult {
+  clips: LipSyncClipSource[]
+  totalDurationMs: number
+  variantIds: string[]
 }
 
 const EPSILON_MS = 50
@@ -66,7 +85,7 @@ export class ClipPlanner {
       presets.map((preset) => [
         preset.id,
         {
-          speechPools: this.buildSpeechPools(preset.speechMotions),
+          speechPools: preset.speechMotions ? this.buildSpeechPools(preset.speechMotions) : new Map(),
           idleLarge: preset.idleMotions.large,
           idleSmall: preset.idleMotions.small,
           speechEnterTransitions: this.buildTransitionMap(preset.speechTransitions?.enter),
@@ -98,11 +117,13 @@ export class ClipPlanner {
       for (const motion of preset.idleMotions.small) {
         await collectMotion(motion.id, motion.absolutePath)
       }
-      for (const motion of preset.speechMotions.large) {
-        await collectMotion(motion.id, motion.absolutePath)
-      }
-      for (const motion of preset.speechMotions.small) {
-        await collectMotion(motion.id, motion.absolutePath)
+      if (preset.speechMotions) {
+        for (const motion of preset.speechMotions.large) {
+          await collectMotion(motion.id, motion.absolutePath)
+        }
+        for (const motion of preset.speechMotions.small) {
+          await collectMotion(motion.id, motion.absolutePath)
+        }
       }
       if (preset.speechTransitions?.enter) {
         for (const motion of preset.speechTransitions.enter) {
@@ -272,6 +293,119 @@ export class ClipPlanner {
       totalDurationMs: durationMs,
       motionIds: [action.id],
     }
+  }
+
+  async buildLipSyncPlan(
+    lipSyncPools: ResolvedLipSyncPools,
+    emotion: string | undefined,
+    durationMs: number
+  ): Promise<LipSyncClipPlanResult> {
+    const normalizedEmotion = normalizeEmotion(emotion)
+
+    // emotionでフィルタリング
+    const filterByEmotion = (variants: ResolvedLipSyncVariant[]) =>
+      normalizedEmotion
+        ? variants.filter((v) => normalizeEmotion(v.emotion) === normalizedEmotion)
+        : variants
+
+    const filteredLarge = filterByEmotion(lipSyncPools.large)
+    const filteredSmall = filterByEmotion(lipSyncPools.small)
+
+    // フォールバック: 該当emotionがなければ全体から選択
+    const largeCandidates = await this.buildLipSyncCandidates(
+      filteredLarge.length ? filteredLarge : lipSyncPools.large
+    )
+    const smallCandidates = await this.buildLipSyncCandidates(
+      filteredSmall.length ? filteredSmall : lipSyncPools.small
+    )
+
+    return this.fillLipSyncPlan(durationMs, largeCandidates, smallCandidates)
+  }
+
+  private async buildLipSyncCandidates(variants: ResolvedLipSyncVariant[]): Promise<LipSyncClipCandidate[]> {
+    const candidates: LipSyncClipCandidate[] = []
+    for (const variant of variants) {
+      try {
+        const durationMs = await this.mediaPipeline.getVideoDurationMs(variant.basePath)
+        if (durationMs > EPSILON_MS) {
+          candidates.push({ variant, durationMs })
+        }
+      } catch {
+        // skip variants that fail to probe
+      }
+    }
+    return candidates
+  }
+
+  private async fillLipSyncPlan(
+    targetDurationMs: number,
+    largeCandidates: LipSyncClipCandidate[],
+    smallCandidates: LipSyncClipCandidate[]
+  ): Promise<LipSyncClipPlanResult> {
+    if (!largeCandidates.length && !smallCandidates.length) {
+      throw new Error('利用可能なlipSyncバリアントがありません')
+    }
+
+    const plan: LipSyncClipSource[] = []
+    let covered = 0
+    let iterations = 0
+    const maxIterations = 2000
+
+    while (covered + EPSILON_MS < targetDurationMs && iterations < maxIterations) {
+      iterations++
+      const remaining = targetDurationMs - covered
+      const candidate =
+        this.pickLipSyncCandidate(largeCandidates, remaining) ??
+        this.pickLipSyncCandidate(smallCandidates, remaining) ??
+        this.pickAnyLipSyncCandidate(smallCandidates) ??
+        this.pickAnyLipSyncCandidate(largeCandidates)
+
+      if (!candidate) {
+        break
+      }
+      plan.push({
+        id: candidate.variant.id,
+        variant: candidate.variant,
+        durationMs: candidate.durationMs,
+      })
+      covered += candidate.durationMs
+    }
+
+    // targetDurationMs が極端に短い場合のフォールバック
+    if (!plan.length) {
+      const fallback =
+        this.pickAnyLipSyncCandidate(smallCandidates) ?? this.pickAnyLipSyncCandidate(largeCandidates)
+      if (fallback) {
+        plan.push({
+          id: fallback.variant.id,
+          variant: fallback.variant,
+          durationMs: fallback.durationMs,
+        })
+        covered += fallback.durationMs
+      }
+    }
+
+    return {
+      clips: plan,
+      totalDurationMs: covered,
+      variantIds: plan.map((clip) => clip.id),
+    }
+  }
+
+  private pickLipSyncCandidate(
+    candidates: LipSyncClipCandidate[],
+    remainingDuration: number
+  ): LipSyncClipCandidate | undefined {
+    const valid = candidates.filter((candidate) => candidate.durationMs <= remainingDuration + EPSILON_MS)
+    if (!valid.length) return undefined
+    const index = Math.floor(Math.random() * valid.length)
+    return valid[index]
+  }
+
+  private pickAnyLipSyncCandidate(candidates: LipSyncClipCandidate[]): LipSyncClipCandidate | undefined {
+    if (!candidates.length) return undefined
+    const index = Math.floor(Math.random() * candidates.length)
+    return candidates[index]
   }
 
   private getPresetResources(presetId: string): PresetClipResources {

@@ -36,6 +36,37 @@ export interface ResolvedTransitionMotion {
   absolutePath: string
 }
 
+export interface ResolvedLipSyncImages {
+  A: string // あ - 大きく開いた口
+  I: string // い - 横に広がった口
+  U: string // う - すぼめた口
+  E: string // え - 中間的に開いた口
+  O: string // お - 丸く開いた口
+  N: string // ん/無音 - 閉じた口
+}
+
+export interface ResolvedOverlayConfig {
+  scale: number
+  offsetX: number
+  offsetY: number
+}
+
+export interface ResolvedLipSyncVariant {
+  id: string
+  type: 'large' | 'small'
+  emotion: string
+  images: ResolvedLipSyncImages
+  // オーバーレイ合成用
+  basePath: string // ベース動画の絶対パス
+  mouthDataPath: string // 口位置JSONの絶対パス
+  overlayConfig: ResolvedOverlayConfig
+}
+
+export interface ResolvedLipSyncPools {
+  large: ResolvedLipSyncVariant[]
+  small: ResolvedLipSyncVariant[]
+}
+
 export interface ResolvedSpeechTransitions {
   enter?: ResolvedTransitionMotion[]
   exit?: ResolvedTransitionMotion[]
@@ -99,9 +130,10 @@ export interface ResolvedPreset {
   actions: ResolvedAction[]
   actionsMap: Map<string, ResolvedAction>
   idleMotions: ResolvedIdlePools
-  speechMotions: ResolvedSpeechPools
+  speechMotions?: ResolvedSpeechPools
   speechTransitions?: ResolvedSpeechTransitions
   audioProfile: ResolvedAudioProfile
+  lipSync?: ResolvedLipSyncPools
 }
 
 export interface ResolvedPaths {
@@ -192,20 +224,22 @@ const resolvePreset = (
     })),
   }
 
-  const speechMotions: ResolvedSpeechPools = {
-    large: preset.speechMotions.large.map((motion) => ({
-      ...motion,
-      type: 'large' as const,
-      emotion: motion.emotion.toLowerCase(),
-      absolutePath: resolveMotionPath(motion.path),
-    })),
-    small: preset.speechMotions.small.map((motion) => ({
-      ...motion,
-      type: 'small' as const,
-      emotion: motion.emotion.toLowerCase(),
-      absolutePath: resolveMotionPath(motion.path),
-    })),
-  }
+  const speechMotions: ResolvedSpeechPools | undefined = preset.speechMotions
+    ? {
+        large: preset.speechMotions.large.map((motion) => ({
+          ...motion,
+          type: 'large' as const,
+          emotion: motion.emotion.toLowerCase(),
+          absolutePath: resolveMotionPath(motion.path),
+        })),
+        small: preset.speechMotions.small.map((motion) => ({
+          ...motion,
+          type: 'small' as const,
+          emotion: motion.emotion.toLowerCase(),
+          absolutePath: resolveMotionPath(motion.path),
+        })),
+      }
+    : undefined
 
   const normalizeTransition = (motion: { id: string; emotion: string; path: string }): ResolvedTransitionMotion => ({
     ...motion,
@@ -233,6 +267,39 @@ const resolvePreset = (
   const audioProfile = resolveAudioProfile(preset.audioProfile, normalizeVoiceEmotion)
   const actionsMap = new Map(actions.map((action) => [action.id.toLowerCase(), action]))
 
+  // lipSync設定の解決（aiueoN形式 - 日本語母音ベース + オーバーレイ合成）
+  // speechMotions と同じ large/small 構造
+  const resolveLipSyncVariant = (
+    variant: NonNullable<typeof preset.lipSync>['large'][number],
+    type: 'large' | 'small'
+  ): ResolvedLipSyncVariant => ({
+    id: variant.id,
+    type,
+    emotion: variant.emotion.toLowerCase(),
+    images: {
+      A: resolveMotionPath(variant.images.A),
+      I: resolveMotionPath(variant.images.I),
+      U: resolveMotionPath(variant.images.U),
+      E: resolveMotionPath(variant.images.E),
+      O: resolveMotionPath(variant.images.O),
+      N: resolveMotionPath(variant.images.N),
+    },
+    basePath: resolveMotionPath(variant.basePath),
+    mouthDataPath: resolveMotionPath(variant.mouthDataPath),
+    overlayConfig: {
+      scale: variant.overlayConfig?.scale ?? 1.0,
+      offsetX: variant.overlayConfig?.offsetX ?? 0,
+      offsetY: variant.overlayConfig?.offsetY ?? 0,
+    },
+  })
+
+  const lipSync: ResolvedLipSyncPools | undefined = preset.lipSync
+    ? {
+        large: preset.lipSync.large.map((v) => resolveLipSyncVariant(v, 'large')),
+        small: (preset.lipSync.small ?? []).map((v) => resolveLipSyncVariant(v, 'small')),
+      }
+    : undefined
+
   return {
     id: preset.id,
     displayName: preset.displayName,
@@ -242,6 +309,7 @@ const resolvePreset = (
     speechMotions,
     speechTransitions,
     audioProfile,
+    lipSync,
   }
 }
 

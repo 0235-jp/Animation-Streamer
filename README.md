@@ -169,6 +169,149 @@ OBS のメディアソースに `rtmp://localhost:1935/live/main` を指定し�
 
 `config/example.stream-profile.docker.json` / `config/example.stream-profile.local.json` には Anchor のサンプルが含まれているので、必要に応じて `presets[]` を増やし、`presetId` を切り替えて利用してください。
 
+## リップシンク (speakLipSync)
+
+`speakLipSync` アクションは、ベース動画に口画像をオーバーレイ合成し、音素レベルで同期したリップシンク動画を生成します。
+
+### 2段階ワークフロー
+
+1. **事前処理（Python）**: ベース動画から口位置を検出しJSONファイルを出力
+2. **動画生成（TypeScript）**: 口位置JSONを読み込み、FFmpegでオーバーレイ合成
+
+### speak との違い
+
+| 項目 | speak（既存） | speakLipSync |
+|------|--------------|---------------------|
+| 素材 | モーション動画（mp4） | ベースループ動画 + 口画像（png）× 6枚/emotion |
+| 口の動き | 動画に含まれる（固定） | 音声に合わせて口画像をオーバーレイ |
+| 同期精度 | 音声の長さのみ | 音素レベルで同期 |
+| 事前処理 | 不要 | 口位置検出が必要（Python） |
+
+### Python 口位置検出スクリプトのセットアップ
+
+ベース動画から口位置を検出するPythonスクリプトを使用します。mediapipe の FaceLandmarker を使用しています。
+
+```bash
+# Python 仮想環境を作成
+python -m venv venv
+source venv/bin/activate
+
+# 依存パッケージをインストール
+pip install -r scripts/requirements.txt
+
+# 口位置検出を実行
+python scripts/detect_mouth_positions.py \
+  --input motions/talk_loop.mp4 \
+  --output motions/talk_loop.mouth.json
+```
+
+出力される JSON には各フレームの口の中心座標・サイズが含まれます:
+```json
+{
+  "videoFileName": "talk_loop.mp4",
+  "frameRate": 16,
+  "positions": [
+    { "frameIndex": 0, "centerX": 448, "centerY": 720, "width": 120, "height": 60 }
+  ]
+}
+```
+
+### 設定
+
+プリセットに `lipSync` オブジェクトを追加し、ベース動画・口位置JSON・口画像を指定します。`large`（長文用）と `small`（短文用、省略可）の2種類を設定できます。
+
+```json
+{
+  "presets": [{
+    "id": "anchor-a",
+    "audioProfile": {
+      "ttsEngine": "voicevox",
+      "voicevoxUrl": "http://127.0.0.1:50021",
+      "voices": [{ "emotion": "neutral", "speakerId": 1 }]
+    },
+    "lipSync": {
+      "large": [
+        {
+          "id": "lip-neutral",
+          "emotion": "neutral",
+          "basePath": "talk_loop.mp4",
+          "mouthDataPath": "talk_loop.mouth.json",
+          "images": {
+            "A": "lip/neutral_A.png",
+            "I": "lip/neutral_I.png",
+            "U": "lip/neutral_U.png",
+            "E": "lip/neutral_E.png",
+            "O": "lip/neutral_O.png",
+            "N": "lip/neutral_N.png"
+          },
+          "overlayConfig": {
+            "scale": 1.0,
+            "offsetX": 0,
+            "offsetY": 0
+          }
+        }
+      ]
+    }
+  }]
+}
+```
+
+**必須フィールド:**
+- `basePath`: ベースとなるループ動画（`motions/` からの相対パス）
+- `mouthDataPath`: Python スクリプトで出力した口位置 JSON
+- `images`: aiueoN 形式の口画像（A, I, U, E, O, N）
+
+**overlayConfig（オプション）:**
+- `scale`: 口画像のスケール倍率（デフォルト: 1.0）
+- `offsetX`, `offsetY`: 位置のオフセット（ピクセル）
+
+**images のキー（aiueoN 形式 - 日本語母音ベース）:**
+- `A`: あ - 大きく開いた口
+- `I`: い - 横に広がった口
+- `U`: う - すぼめた口
+- `E`: え - 中間的に開いた口
+- `O`: お - 丸く開いた口
+- `N`: ん/無音 - 閉じた口
+
+画像は `motions/` ディレクトリ配下に配置します（例: `motions/lip/neutral_A.png`）。
+
+### API 例
+
+```bash
+# テキスト入力
+curl -X POST http://localhost:4000/api/generate \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "presetId": "anchor-a",
+    "requests": [
+      { "action": "speakLipSync", "params": { "text": "こんにちは", "emotion": "neutral" } }
+    ]
+  }'
+
+# 音声入力（STT→TTS）
+curl -X POST http://localhost:4000/api/generate \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "presetId": "anchor-a",
+    "requests": [
+      { "action": "speakLipSync", "params": { "audio": { "path": "/path/to/voice.wav", "transcribe": true } } }
+    ]
+  }'
+```
+
+### 対応 TTS エンジン
+
+| TTS エンジン | タイムライン生成方式 |
+|-------------|-------------------|
+| VOICEVOX | audio_query のモーラ情報（高精度） |
+| Style-Bert-VITS2 | MFCC 音声解析 |
+| 直接音声使用 | MFCC 音声解析 |
+
+### 制限事項
+
+- **lipSync 設定必須**: プリセットに `lipSync` 配列がない場合はエラー
+- **口位置 JSON 必須**: Python スクリプトで事前に生成が必要
+
 ## 音声入力 (STT)
 
 `speak` アクションではテキストの代わりに音声ファイルを入力できます。
@@ -347,3 +490,10 @@ ffmpeg -i "talk_large.mp4" -vf "scale=896:1152,fps=16" -c:v libx264 -pix_fmt yuv
 ```
 
 多数決で推奨基準が決定され、変換が必要なファイルのコマンドが自動生成されます。
+
+## Special Thanks
+
+- [LipWI2VJs](https://github.com/M-gen/LipWI2VJs) - 口の形の解析に参考にさせていただきました
+- [MotionPNGTuber](https://github.com/rotejin/MotionPNGTuber) - LipSyncアクションの実装に参考にさせていただきました
+- [wLipSync](https://github.com/mrxz/wLipSync) - MFCCプロファイルデータ提供
+

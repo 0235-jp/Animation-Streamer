@@ -82,6 +82,39 @@ export const audioProfileSchema = z.discriminatedUnion('ttsEngine', [
   sbv2AudioProfileSchema,
 ])
 
+// リップシンク用画像セットスキーマ（aiueoN形式 - 日本語母音ベース）
+const lipSyncImagesSchema = z.object({
+  A: z.string().min(1), // あ - 大きく開いた口
+  I: z.string().min(1), // い - 横に広がった口
+  U: z.string().min(1), // う - すぼめた口
+  E: z.string().min(1), // え - 中間的に開いた口
+  O: z.string().min(1), // お - 丸く開いた口
+  N: z.string().min(1), // ん/無音 - 閉じた口
+})
+
+// 口画像オーバーレイ設定スキーマ
+const mouthOverlayConfigSchema = z.object({
+  scale: z.number().positive().default(1.0), // 口画像のスケール倍率
+  offsetX: z.number().default(0), // X軸オフセット（ピクセル）
+  offsetY: z.number().default(0), // Y軸オフセット（ピクセル）
+})
+
+const lipSyncVariantSchema = z.object({
+  id: z.string().min(1),
+  emotion: z.string().min(1).default('neutral'),
+  images: lipSyncImagesSchema,
+  // オーバーレイ合成用の設定
+  basePath: z.string().min(1), // ベース動画パス（ループ動画）
+  mouthDataPath: z.string().min(1), // 口位置JSONパス（Python出力）
+  overlayConfig: mouthOverlayConfigSchema.optional(),
+})
+
+// speechMotions と同じ large/small 構造
+export const sizedLipSyncSchema = z.object({
+  large: z.array(lipSyncVariantSchema).min(1),
+  small: z.array(lipSyncVariantSchema).optional(), // small は省略可能
+})
+
 // STT設定スキーマ（トップレベル）- OpenAI互換API
 export const sttConfigSchema = z.object({
   baseUrl: z.string().min(1).default('http://localhost:8000/v1'),
@@ -90,20 +123,26 @@ export const sttConfigSchema = z.object({
   language: z.string().min(1).default('ja'),
 })
 
-const presetSchema = z.object({
-  id: z.string().min(1),
-  displayName: z.string().min(1).optional(),
-  actions: z.array(actionSchema).default([]),
-  idleMotions: sizedMotionSchema,
-  speechMotions: sizedMotionSchema,
-  speechTransitions: z
-    .object({
-      enter: transitionCollectionSchema.optional(),
-      exit: transitionCollectionSchema.optional(),
-    })
-    .optional(),
-  audioProfile: audioProfileSchema,
-})
+const presetSchema = z
+  .object({
+    id: z.string().min(1),
+    displayName: z.string().min(1).optional(),
+    actions: z.array(actionSchema).default([]),
+    idleMotions: sizedMotionSchema,
+    speechMotions: sizedMotionSchema.optional(),
+    speechTransitions: z
+      .object({
+        enter: transitionCollectionSchema.optional(),
+        exit: transitionCollectionSchema.optional(),
+      })
+      .optional(),
+    audioProfile: audioProfileSchema,
+    lipSync: sizedLipSyncSchema.optional(),
+  })
+  .refine((data) => data.speechMotions || data.lipSync, {
+    message: 'speechMotions または lipSync のどちらかを設定してください',
+    path: ['speechMotions'],
+  })
 
 export const configSchema = z.object({
   server: z

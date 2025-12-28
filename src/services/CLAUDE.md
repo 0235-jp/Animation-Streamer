@@ -15,12 +15,13 @@
 | `style-bert-vits2.ts` | Style-Bert-VITS2 TTS クライアント |
 | `stt.ts` | STT (音声認識) クライアント |
 | `idle-loop.controller.ts` | 待機ループ制御 |
+| `lip-sync/` | リップシンク機能モジュール |
 
 ## generation.service.ts
 
 `GenerationService` クラス:
 - `processBatch()` - リクエストバッチを処理
-- アクション: `start`, `speak`, `idle`
+- アクション: `start`, `speak`, `speakLipSync`, `idle`
 - TTS で音声生成 → クリップ計画 → 動画生成 → 結合
 - ストリーミング/非ストリーミング両対応
 

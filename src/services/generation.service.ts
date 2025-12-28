@@ -10,13 +10,14 @@ import {
   type ResolvedVoicevoxAudioProfile,
   type ResolvedSbv2AudioProfile,
 } from '../config/loader'
-import { ClipPlanner } from './clip-planner'
+import { ClipPlanner, type LipSyncClipPlanResult } from './clip-planner'
 import { MediaPipeline, type ClipSource, NoAudioTrackError } from './media-pipeline'
 import { VoicevoxClient, type VoicevoxVoiceOptions } from './voicevox'
 import { StyleBertVits2Client, type StyleBertVits2VoiceOptions } from './style-bert-vits2'
 import { STTClient } from './stt'
 import { CacheService, type SpeakCacheKeyData, type IdleCacheKeyData, type CombinedCacheKeyData, type SpeakInputType } from './cache.service'
-import type { ActionResult, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler, AudioInput } from '../types/generate'
+import { generateVisemeTimeline, getMfccProvider, composeMultiSegmentLipSyncVideo } from './lip-sync'
+import type { ActionResult, GenerateRequestItem, GenerateRequestPayload, StreamPushHandler, AudioInput, VoicevoxAudioQueryResponse } from '../types/generate'
 import { logger } from '../utils/logger'
 
 const DEFAULT_EMOTION = 'neutral'
@@ -233,6 +234,8 @@ export class GenerationService {
     switch (actionName) {
       case 'speak':
         return this.handleSpeak(preset, item, requestId, includeDebug, forStream, useCache)
+      case 'speaklipsync':
+        return this.handleSpeakLipSync(preset, item, requestId, includeDebug, forStream, useCache)
       case 'idle':
         return this.handleIdle(preset, item, requestId, includeDebug, forStream, useCache)
       default:
@@ -250,6 +253,8 @@ export class GenerationService {
     switch (actionName) {
       case 'speak':
         return this.planSpeakAction(preset, item, jobDir, requestId)
+      case 'speaklipsync':
+        return this.planSpeakLipSyncAction(preset, item, jobDir, requestId)
       case 'idle':
         return this.planIdleAction(preset, item, jobDir, requestId)
       default:
@@ -333,6 +338,184 @@ export class GenerationService {
     } finally {
       await this.mediaPipeline.removeJobDir(jobDir)
     }
+  }
+
+  private async handleSpeakLipSync(
+    preset: ResolvedPreset,
+    item: GenerateRequestItem,
+    requestId: string,
+    includeDebug: boolean,
+    forStream = false,
+    useCache = false
+  ): Promise<ActionResult> {
+    const params = item.params ?? {}
+    const emotion = this.ensureOptionalString(params.emotion) ?? DEFAULT_EMOTION
+    const audio = params.audio as AudioInput | undefined
+
+    // バリデーション: lipSync設定必須
+    this.validateSpeakLipSyncRequest(preset, params, requestId)
+
+    const jobDir = await this.mediaPipeline.createJobDir()
+    try {
+      // 音声ファイルパスとタイムラインを取得
+      const { audioPath, timeline } = await this.generateLipSyncAudioAndTimeline(
+        preset,
+        params,
+        audio,
+        emotion,
+        jobDir,
+        requestId
+      )
+
+      // 音声の長さを取得してクリッププランを作成
+      const audioDurationMs = timeline[timeline.length - 1].endMs
+      const lipSyncPlan = await this.clipPlanner.buildLipSyncPlan(preset.lipSync!, emotion, audioDurationMs)
+
+      logger.info(
+        { requestId, clips: lipSyncPlan.clips.length, totalDurationMs: lipSyncPlan.totalDurationMs },
+        'Built lip sync clip plan'
+      )
+
+      // モーションの長さに合わせて音声をパディング（無音追加）
+      const motionDurationMs = lipSyncPlan.totalDurationMs
+      const fittedAudioPath = await this.mediaPipeline.fitAudioDuration(
+        audioPath,
+        motionDurationMs,
+        jobDir,
+        `lipsync-${requestId}-fit`
+      )
+
+      // タイムラインをモーションの長さに合わせて延長（末尾にNセグメント追加）
+      const extendedTimeline = [...timeline]
+      if (motionDurationMs > audioDurationMs) {
+        extendedTimeline.push({
+          startMs: audioDurationMs,
+          endMs: motionDurationMs,
+          viseme: 'N' as const,
+        })
+      }
+
+      // 複数セグメント対応のオーバーレイ合成でリップシンク動画を生成
+      const { outputPath, durationMs } = await composeMultiSegmentLipSyncVideo({
+        clips: lipSyncPlan.clips,
+        timeline: extendedTimeline,
+        audioPath: fittedAudioPath,
+        jobDir,
+      })
+
+      // ファイル名を決定
+      const baseName = forStream
+        ? `speaklipsync-${requestId}-${randomUUID()}`
+        : `speaklipsync-${randomUUID()}`
+      const finalPath = await this.moveToOutput(outputPath, baseName, forStream)
+
+      logger.info({ requestId, durationMs, timelineSegments: timeline.length }, 'Lip sync overlay video generated')
+
+      const result: ActionResult = {
+        id: requestId,
+        action: item.action,
+        outputPath: finalPath,
+        durationMs: Math.round(durationMs),
+      }
+      if (includeDebug) {
+        result.motionIds = lipSyncPlan.variantIds
+      }
+      return result
+    } finally {
+      await this.mediaPipeline.removeJobDir(jobDir)
+    }
+  }
+
+  /**
+   * リップシンク用の音声とタイムラインを生成
+   * - VOICEVOX: audio_queryからタイムライン生成
+   * - Style-Bert-VITS2 / 直接音声: MFCCでタイムライン生成
+   */
+  private async generateLipSyncAudioAndTimeline(
+    preset: ResolvedPreset,
+    params: Record<string, unknown>,
+    audio: AudioInput | undefined,
+    emotion: string,
+    jobDir: string,
+    requestId: string
+  ): Promise<{ audioPath: string; timeline: import('../types/generate').VisemeSegment[]; text?: string }> {
+    const audioProfile = preset.audioProfile
+
+    // パターン1: 直接音声使用（transcribe: false または未指定）
+    if (audio && audio.transcribe !== true) {
+      const audioFilePath = await this.resolveAudioFilePath(audio, jobDir, requestId)
+      logger.info({ requestId }, 'Using direct audio with MFCC lip sync')
+      const timeline = await getMfccProvider().generateTimeline(audioFilePath)
+      return { audioPath: audioFilePath, timeline, text: undefined }
+    }
+
+    // パターン2: 音声入力→STT→TTS
+    if (audio && audio.transcribe === true) {
+      const audioFilePath = await this.resolveAudioFilePath(audio, jobDir, requestId)
+      const text = await this.transcribeAudio(audioFilePath, requestId)
+      logger.info({ requestId, textLength: text.length }, 'Audio transcribed for lip sync')
+      const result = await this.synthesizeWithLipSync(audioProfile, text, emotion, jobDir, requestId)
+      return { ...result, text }
+    }
+
+    // パターン3: テキスト入力→TTS
+    const text = this.ensureString(params.text, 'text', requestId)
+    const result = await this.synthesizeWithLipSync(audioProfile, text, emotion, jobDir, requestId)
+    return { ...result, text }
+  }
+
+  /**
+   * TTSで音声合成し、リップシンクタイムラインを生成
+   */
+  private async synthesizeWithLipSync(
+    audioProfile: ResolvedPreset['audioProfile'],
+    text: string,
+    emotion: string,
+    jobDir: string,
+    requestId: string
+  ): Promise<{ audioPath: string; timeline: import('../types/generate').VisemeSegment[] }> {
+    const audioPath = path.join(jobDir, `voice-${requestId}.wav`)
+
+    if (audioProfile.ttsEngine === 'voicevox') {
+      // VOICEVOX: audio_queryからタイムライン生成（高精度）
+      const { voice, endpoint } = this.resolveVoicevoxVoiceProfile(audioProfile, emotion)
+      const { audioQuery } = await this.voicevox.synthesizeWithQuery(text, audioPath, voice, { endpoint })
+      const timeline = generateVisemeTimeline(audioQuery)
+      return { audioPath, timeline }
+    } else {
+      // Style-Bert-VITS2: MFCCでタイムライン生成
+      const { voice, endpoint } = this.resolveSbv2VoiceProfile(audioProfile, emotion)
+      await this.sbv2.synthesize(text, audioPath, voice, { endpoint })
+      logger.info({ requestId }, 'Using MFCC lip sync for Style-Bert-VITS2')
+      const timeline = await getMfccProvider().generateTimeline(audioPath)
+      return { audioPath, timeline }
+    }
+  }
+
+  private validateSpeakLipSyncRequest(
+    preset: ResolvedPreset,
+    params: Record<string, unknown>,
+    requestId: string
+  ): void {
+    // lipSync設定がない場合はエラー（large/small構造）
+    if (!preset.lipSync || preset.lipSync.large.length === 0) {
+      throw new ActionProcessingError('lipSync設定がありません', requestId)
+    }
+    // VOICEVOX / Style-Bert-VITS2 どちらも対応
+    // 直接音声使用（transcribe: false）も MFCC で対応可能
+  }
+
+  private async resolveAudioFilePath(
+    audio: AudioInput,
+    jobDir: string,
+    requestId: string
+  ): Promise<string> {
+    if (audio.base64) {
+      return this.saveBase64Audio(audio.base64, jobDir, requestId)
+    } else if (audio.path) {
+      return this.copyExternalAudio(audio.path, jobDir, requestId)
+    }
+    throw new ActionProcessingError('audio には path または base64 のいずれかを指定してください', requestId)
   }
 
   private async handleIdle(
@@ -517,6 +700,83 @@ export class GenerationService {
       cacheHash,
       text: cacheKeyData.text,
       inputType: cacheKeyData.inputType,
+    }
+  }
+
+  private async planSpeakLipSyncAction(
+    preset: ResolvedPreset,
+    item: GenerateRequestItem,
+    jobDir: string,
+    requestId: string
+  ): Promise<PlannedAction> {
+    const params = item.params ?? {}
+    const emotion = this.ensureOptionalString(params.emotion) ?? DEFAULT_EMOTION
+    const audio = params.audio as AudioInput | undefined
+
+    // バリデーション
+    this.validateSpeakLipSyncRequest(preset, params, requestId)
+
+    // 音声とタイムラインを生成（TTS エンジンに応じて適切に処理）
+    const { audioPath, timeline, text } = await this.generateLipSyncAudioAndTimeline(
+      preset,
+      params,
+      audio,
+      emotion,
+      jobDir,
+      requestId
+    )
+
+    // 音声の長さを取得してクリッププランを作成
+    const audioDurationMs = timeline[timeline.length - 1].endMs
+    const lipSyncPlan = await this.clipPlanner.buildLipSyncPlan(preset.lipSync!, emotion, audioDurationMs)
+
+    // モーションの長さに合わせて音声をパディング（無音追加）
+    const motionDurationMs = lipSyncPlan.totalDurationMs
+    const fittedAudioPath = await this.mediaPipeline.fitAudioDuration(
+      audioPath,
+      motionDurationMs,
+      jobDir,
+      `lipsync-${requestId}-fit`
+    )
+
+    // タイムラインをモーションの長さに合わせて延長（末尾にNセグメント追加）
+    const extendedTimeline = [...timeline]
+    if (motionDurationMs > audioDurationMs) {
+      extendedTimeline.push({
+        startMs: audioDurationMs,
+        endMs: motionDurationMs,
+        viseme: 'N' as const,
+      })
+    }
+
+    // 複数セグメント対応のオーバーレイ合成でリップシンク動画を生成
+    const { outputPath: videoPath, durationMs } = await composeMultiSegmentLipSyncVideo({
+      clips: lipSyncPlan.clips,
+      timeline: extendedTimeline,
+      audioPath: fittedAudioPath,
+      jobDir,
+    })
+
+    // inputType を決定
+    let inputType: SpeakInputType
+    if (!audio) {
+      inputType = 'text'
+    } else if (audio.transcribe === true) {
+      inputType = 'audio_transcribe'
+    } else {
+      inputType = 'audio'
+    }
+
+    // PlannedActionとして返す（生成した動画を1つのclipとして扱う）
+    return {
+      id: requestId,
+      action: item.action,
+      clips: [{ id: `lipsync-${requestId}`, path: videoPath, durationMs }],
+      motionIds: lipSyncPlan.variantIds,
+      durationMs,
+      audioPath: fittedAudioPath,
+      text,
+      inputType,
     }
   }
 
